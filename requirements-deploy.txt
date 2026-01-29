@@ -1,0 +1,4 @@
+# デプロイ用（Streamlit Cloud など）
+# app.py の表示のみに必要。スクレイピングはローカルで requirements.txt を使用
+streamlit>=1.28.0
+pandas>=2.0.0
