@@ -3,8 +3,10 @@
 Streamlitで作成
 """
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import re
+import time
 from typing import Optional
 
 # ページ設定
@@ -389,6 +391,8 @@ def display_card_view(df, key_prefix="card_view"):
     current_page_df = df.iloc[start_idx:end_idx]
     
     # ページネーションコントロール（上側：統一版）
+    # スクロールの目印（上部「次へ」付近へ飛ぶため）
+    st.markdown(f'<div id="page-top-marker-{key_prefix}"></div>', unsafe_allow_html=True)
     if total_pages > 1:
         st.markdown('<div class="pagination-in-page">', unsafe_allow_html=True)
         # ページ番号直接入力（1行目：コンパクト、中央配置）
@@ -521,6 +525,8 @@ def display_card_view(df, key_prefix="card_view"):
                 )
                 if page_input_bottom != st.session_state[current_page_key]:
                     st.session_state[current_page_key] = int(page_input_bottom)
+                    st.session_state["scroll_to_top"] = True
+                    st.session_state["scroll_to_top_target"] = key_prefix
                     st.rerun()
         
         with col_input3_bottom:
@@ -533,11 +539,15 @@ def display_card_view(df, key_prefix="card_view"):
             prev_10_disabled_bottom = (st.session_state[current_page_key] <= 10)
             if st.button("◀◀ 10前", disabled=prev_10_disabled_bottom, use_container_width=True, key=f"{key_prefix}_prev10_bottom"):
                 st.session_state[current_page_key] = max(1, st.session_state[current_page_key] - 10)
+                st.session_state["scroll_to_top"] = True
+                st.session_state["scroll_to_top_target"] = key_prefix
                 st.rerun()
         
         with col2_bottom:
             if st.button("◀ 前へ", disabled=(st.session_state[current_page_key] <= 1), use_container_width=True, key=f"{key_prefix}_prev_bottom"):
                 st.session_state[current_page_key] -= 1
+                st.session_state["scroll_to_top"] = True
+                st.session_state["scroll_to_top_target"] = key_prefix
                 st.rerun()
         
         with col3_bottom:
@@ -546,12 +556,16 @@ def display_card_view(df, key_prefix="card_view"):
         with col4_bottom:
             if st.button("次へ ▶", disabled=(st.session_state[current_page_key] >= total_pages), use_container_width=True, key=f"{key_prefix}_next_bottom"):
                 st.session_state[current_page_key] += 1
+                st.session_state["scroll_to_top"] = True
+                st.session_state["scroll_to_top_target"] = key_prefix
                 st.rerun()
         
         with col5_bottom:
             next_10_disabled_bottom = (st.session_state[current_page_key] >= total_pages - 9)
             if st.button("10後 ▶▶", disabled=next_10_disabled_bottom, use_container_width=True, key=f"{key_prefix}_next10_bottom"):
                 st.session_state[current_page_key] = min(total_pages, st.session_state[current_page_key] + 10)
+                st.session_state["scroll_to_top"] = True
+                st.session_state["scroll_to_top_target"] = key_prefix
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -665,7 +679,25 @@ def main():
     """
     # データ読み込み
     df = load_data()
-    
+
+    # 下部ページネーション押下時：上部ページネーション付近の目印へジャンプ
+    if st.session_state.get("scroll_to_top"):
+        target = st.session_state.get("scroll_to_top_target", "card_view")
+        js_code = f"""
+        <script>
+            setTimeout(function() {{
+                var marker = window.parent.document.getElementById("page-top-marker-{target}");
+                if (marker) {{
+                    marker.scrollIntoView({{behavior: "auto", block: "start"}});
+                }}
+            }}, 100);
+        </script>
+        """
+        components.html(js_code, height=0)
+        del st.session_state["scroll_to_top"]
+        if "scroll_to_top_target" in st.session_state:
+            del st.session_state["scroll_to_top_target"]
+
     # ヘッダー（カードで囲む）
     st.markdown(
         '<div class="header-card">'
@@ -742,6 +774,8 @@ def main():
     if current_filter_state != st.session_state.last_filter_state:
         if 'card_view_current_page' in st.session_state:
             st.session_state.card_view_current_page = 1
+        if 'analysis_card_view_current_page' in st.session_state:
+            st.session_state.analysis_card_view_current_page = 1
         st.session_state.last_filter_state = current_filter_state
     
     # スマホ版：メイン画面にフィルターを配置（デスクトップでは非表示）
@@ -815,6 +849,14 @@ def main():
             unsafe_allow_html=True,
         )
         display_table_view(filtered_df)
+        st.markdown(
+            '<div class="section-card" style="margin-top: 1rem;">'
+            '<h3>📱 カード一覧（現場リサーチと同じ表示）</h3>'
+            '<p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">テーブルの下にカード型で同じデータを表示します。</p>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        display_card_view(filtered_df, key_prefix="analysis_card_view")
     
     with tab2:
         st.markdown(
