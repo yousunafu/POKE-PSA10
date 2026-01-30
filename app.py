@@ -3,9 +3,9 @@
 Streamlitで作成
 """
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import re
+import random
 import time
 from typing import Optional
 
@@ -391,7 +391,29 @@ def display_card_view(df, key_prefix="card_view"):
     current_page_df = df.iloc[start_idx:end_idx]
     
     # ページネーションコントロール（上側：統一版）
-    # スクロールの目印（上部「次へ」付近へ飛ぶため）
+    # 下部「次へ」押下時：このタブの上部ページネーション付近へスクロール（autofocus + 失敗時は JS で補完）
+    if st.session_state.get("scroll_to_top") and st.session_state.get("scroll_to_top_target") == key_prefix:
+        # 毎回必ず別の HTML にし、Streamlit がブロックを再利用しないようにする（autofocus が確実に発火するように）
+        ts = int(time.time() * 1000)
+        rnd = random.randint(0, 999999)
+        dummy_id = f"dummy-focus-{key_prefix}-{ts}-{rnd}"
+        marker_id = f"page-top-marker-{key_prefix}"
+        # 1) autofocus でスクロール（体感7割成功）
+        st.markdown(
+            f'<div style="height:0;width:0;overflow:hidden;" data-scroll-ts="{ts}" data-scroll-rnd="{rnd}">'
+            f'<span style="display:none;">{ts}-{rnd}</span>'
+            f'<input type="text" id="{dummy_id}" autofocus style="opacity:0;" tabindex="-1" /></div>',
+            unsafe_allow_html=True,
+        )
+        # 2) 失敗時のフォールバック：約400ms後に scrollIntoView（同一ドキュメントなのでデプロイ先でも動く）
+        st.markdown(
+            f'<img src="x" style="display:none;" '
+            f'onerror="setTimeout(function(){{var m=document.getElementById(\'{marker_id}\');if(m)m.scrollIntoView({{behavior:\'auto\',block:\'start\'}});}}, 400);" />',
+            unsafe_allow_html=True,
+        )
+        del st.session_state["scroll_to_top"]
+        if "scroll_to_top_target" in st.session_state:
+            del st.session_state["scroll_to_top_target"]
     st.markdown(f'<div id="page-top-marker-{key_prefix}"></div>', unsafe_allow_html=True)
     if total_pages > 1:
         st.markdown('<div class="pagination-in-page">', unsafe_allow_html=True)
@@ -679,24 +701,6 @@ def main():
     """
     # データ読み込み
     df = load_data()
-
-    # 下部ページネーション押下時：上部ページネーション付近の目印へジャンプ
-    if st.session_state.get("scroll_to_top"):
-        target = st.session_state.get("scroll_to_top_target", "card_view")
-        js_code = f"""
-        <script>
-            setTimeout(function() {{
-                var marker = window.parent.document.getElementById("page-top-marker-{target}");
-                if (marker) {{
-                    marker.scrollIntoView({{behavior: "auto", block: "start"}});
-                }}
-            }}, 100);
-        </script>
-        """
-        components.html(js_code, height=0)
-        del st.session_state["scroll_to_top"]
-        if "scroll_to_top_target" in st.session_state:
-            del st.session_state["scroll_to_top_target"]
 
     # ヘッダー（カードで囲む）
     st.markdown(
