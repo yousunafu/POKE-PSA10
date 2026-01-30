@@ -119,6 +119,46 @@ def _normalize_card_name(name: str) -> str:
     return name
 
 
+def _check_card_number_in_text(target_number: str, text: str) -> bool:
+    """
+    商品名・URL に型番が含まれるか確認（表記ゆれ対応）。
+    target_number="091/064" のとき、text 内に "091" + (記号or空白) + "064" が含まれるか。
+    091-064, 091_064 などもヒットする。
+    """
+    if not target_number or not text:
+        return False
+    # 区切り文字で分割（英数字の塊だけ残す）
+    parts = re.split(r'[^a-zA-Z0-9]', target_number.strip())
+    parts = [p for p in parts if p]
+    if not parts:
+        return False
+    if len(parts) == 1:
+        return parts[0] in text
+    # "091.*064" のように間に非単語文字を許容するパターン
+    pattern = r'.*'.join([re.escape(p) for p in parts])
+    return re.search(pattern, text) is not None
+
+
+def _target_tokens_all_in_product(normalized_target: str, normalized_product: str) -> bool:
+    """
+    ターゲットを「日本語ブロック」「英数字ブロック」に分割し、
+    各ブロックが商品名に含まれるか判定する。
+    「カシオペアsv6a」vs「カシオペアsar{091/064}sv6a」のように
+    商品名の途中に【SAR】等が挟まるケースでマッチさせる。
+    """
+    if not normalized_target or not normalized_product:
+        return False
+    # 日本語（ひらがな・カタカナ・漢字）と英数字の境界で分割
+    tokens = re.split(
+        r'(?<=[\u3040-\u9fff])(?=[a-zA-Z0-9])|(?<=[a-zA-Z0-9])(?=[\u3040-\u9fff])',
+        normalized_target,
+    )
+    tokens = [t for t in tokens if len(t) >= 1]
+    if not tokens:
+        return normalized_target in normalized_product
+    return all(t in normalized_product for t in tokens)
+
+
 def _filter_masbo_candidates(candidates: list) -> list:
     """
     レアがマスボの場合の候補を絞る。
@@ -133,11 +173,12 @@ def _filter_masbo_candidates(candidates: list) -> list:
     return no_condition if no_condition else masbo_only
 
 
-def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "") -> Optional[Dict]:
+def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "", card_number: str = "") -> Optional[Dict]:
     """
     カードラッシュで検索して、在庫ありの最安値商品情報を取得
     タイムアウトが発生しても画像だけは取得を試みる
     rarity: レア（マスボの場合は「マスターボールミラー」の価格を取得する）。
+    card_number: 型番（例: 091/064）。型番一致時のみ名前を双方向部分一致で判定し、パターン2対応。
     """
     image_url = None  # エラー時でも画像取得を試みるため、外側で定義
     
@@ -268,19 +309,35 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "")
                 # 在庫状況を確認
                 stock_count = extract_stock_count(full_text)
                 
-                # 元データのカード名とのマッチ度を計算
+                # 元データのカード名とのマッチ度を計算（パターン2対応: 型番一致時は双方向部分一致）
                 normalized_product_name = _normalize_card_name(product_name)
-                name_match = (
-                    bool(normalized_target_name)
-                    and normalized_target_name in normalized_product_name
+                has_number_match = bool(card_number) and (
+                    _check_card_number_in_text(card_number, product_name)
+                    or _check_card_number_in_text(card_number, product_url or "")
                 )
+                if has_number_match:
+                    # 型番が合っている商品に限り、名前は双方向部分一致 or トークン全含むでOK（【SAR】カシオペア など対応）
+                    name_match = (
+                        bool(normalized_target_name)
+                        and (
+                            normalized_target_name in normalized_product_name
+                            or normalized_product_name in normalized_target_name
+                            or _target_tokens_all_in_product(normalized_target_name, normalized_product_name)
+                        )
+                    )
+                else:
+                    # 型番なし/不一致のときは既存の厳しい条件（ターゲット ⊂ 商品）のみ
+                    name_match = (
+                        bool(normalized_target_name)
+                        and normalized_target_name in normalized_product_name
+                    )
                 
                 # デバッグ出力（最初の数件のみ）
                 if len(product_items) + len(out_of_stock_items) < 3:
                     print(f"    商品名: {product_name[:50]}")
                     print(f"    正規化後: {normalized_product_name}")
                     print(f"    ターゲット名: {target_name} -> 正規化後: {normalized_target_name}")
-                    print(f"    マッチ: {name_match}")
+                    print(f"    型番一致: {has_number_match} マッチ: {name_match}")
 
                 product_data = {
                     'name': product_name[:100],  # 長すぎる場合は切り詰め
@@ -555,10 +612,11 @@ def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = Fal
                 results.append(row)
                 continue
             
-            # カードラッシュで検索（元のカード名・レアも渡す。マスボの場合はマスターボールミラーを取得）
+            # カードラッシュで検索（元のカード名・レア・型番も渡す。型番一致時は双方向名前マッチでパターン2対応）
             target_name = row.get('カード名', '').strip()
             rarity = row.get('レア', '').strip()
-            rush_data = search_cardrush(page, keyword, target_name=target_name, rarity=rarity)
+            card_number_val = row.get('card_number', '').strip()
+            rush_data = search_cardrush(page, keyword, target_name=target_name, rarity=rarity, card_number=card_number_val)
             
             # リクエスト間に待機時間を入れる
             wait_time = 2.5  # 2.5秒待機
