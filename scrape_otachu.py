@@ -10,7 +10,7 @@ from typing import List, Dict
 def extract_card_number(card_name: str) -> str:
     """
     カード名から型番を抽出する
-    例: "094/080", "SV2a", "123/456" などを抽出
+    例: "094/080", "SV2a", "123/456", "001/SV-P", "001/S-P", "005/SM-P" などを抽出
     """
     if not card_name:
         return ""
@@ -27,7 +27,7 @@ def extract_card_number(card_name: str) -> str:
     if match1b:
         return match1b.group(0)
     
-    # パターン3: 数字/SV-P などの形式（例: 001/SV-P, 260/SV-P, 062/SV-P）
+    # パターン3: 数字/プロモ識別子の形式（例: 001/SV-P, 001/S-P, 005/SM-P）
     pattern2 = r'\d{2,3}/[A-Z-]+'
     match2 = re.search(pattern2, card_name)
     if match2:
@@ -123,7 +123,8 @@ def scrape_otachu_psa10(url: str) -> List[Dict]:
                 # セル構造のパターン:
                 # パターン1: [弾, No, レア, カード名, 買取金額, 更新日] (6セル)
                 # パターン2: [No, レア, カード名, 買取金額, 更新日] (5セル)
-                # パターン3: [弾名のみ] (1セル - セット名の行)
+                # パターン3: [No, カード名, 買取金額, 更新日] (4セル・プロモ行 SV-P/S-P/SM-P など)
+                # パターン4: [弾名のみ] (1セル - セット名の行)
                 
                 if len(cell_texts) == 1:
                     # セット名の行の可能性
@@ -132,66 +133,75 @@ def scrape_otachu_psa10(url: str) -> List[Dict]:
                         current_set_name = potential_set_name
                     continue
                 
-                # データ行の処理
-                if len(cell_texts) >= 5:
-                    # セル数に応じてインデックスを調整
-                    if len(cell_texts) == 6:
-                        # [弾, No, レア, カード名, 買取金額, 更新日]
+                # データ行の処理用に変数を初期化
+                set_name = current_set_name
+                no = ""
+                rarity = ""
+                card_name = ""
+                price = ""
+                update_date = ""
+                
+                if len(cell_texts) == 4:
+                    # プロモ行: [No, カード名, 買取金額, 更新日]（レア列なし）
+                    # 001/SV-P, 001/S-P, 005/SM-P などの形式
+                    no = cell_texts[0]
+                    card_name = cell_texts[1]
+                    price = cell_texts[2]
+                    update_date = cell_texts[3]
+                    rarity = "プロモ"
+                elif len(cell_texts) == 6:
+                    # [弾, No, レア, カード名, 買取金額, 更新日]
+                    set_name = cell_texts[0] if cell_texts[0] else current_set_name
+                    no = cell_texts[1]
+                    rarity = cell_texts[2]
+                    card_name = cell_texts[3]
+                    price = cell_texts[4]
+                    update_date = cell_texts[5]
+                elif len(cell_texts) == 5:
+                    # [No, レア, カード名, 買取金額, 更新日] または [弾, No, レア, カード名, 買取金額]
+                    if re.match(r'\d+/\d+', cell_texts[0]) or re.match(r'\d+/[A-Z-]+', cell_texts[0]) or cell_texts[0].isdigit():
+                        no = cell_texts[0]
+                        rarity = cell_texts[1]
+                        card_name = cell_texts[2]
+                        price = cell_texts[3]
+                        update_date = cell_texts[4]
+                    else:
                         set_name = cell_texts[0] if cell_texts[0] else current_set_name
                         no = cell_texts[1]
                         rarity = cell_texts[2]
                         card_name = cell_texts[3]
                         price = cell_texts[4]
-                        update_date = cell_texts[5] if len(cell_texts) > 5 else ""
-                    elif len(cell_texts) == 5:
-                        # [No, レア, カード名, 買取金額, 更新日] または [弾, No, レア, カード名, 買取金額]
-                        # 最初のセルが数字/数字の形式ならNo、そうでなければ弾名
-                        if re.match(r'\d+/\d+', cell_texts[0]) or cell_texts[0].isdigit():
-                            set_name = current_set_name
-                            no = cell_texts[0]
-                            rarity = cell_texts[1]
-                            card_name = cell_texts[2]
-                            price = cell_texts[3]
-                            update_date = cell_texts[4] if len(cell_texts) > 4 else ""
-                        else:
-                            set_name = cell_texts[0] if cell_texts[0] else current_set_name
-                            no = cell_texts[1]
-                            rarity = cell_texts[2]
-                            card_name = cell_texts[3]
-                            price = cell_texts[4]
-                            update_date = ""
-                    else:
-                        # その他のパターンはスキップ
-                        continue
-                    
-                    # 空のデータはスキップ
-                    if not card_name or not price or "¥" not in price:
-                        continue
-                    
-                    # 型番を抽出（Noカラムとカード名の両方から試行）
-                    card_number = no if no else extract_card_number(card_name)
-                    if not card_number:
-                        card_number = extract_card_number(card_name)
-                    
-                    # 価格を数値に変換
-                    price_int = clean_price(price)
-                    
-                    # 価格が0の場合はスキップ（データが不正な可能性）
-                    if price_int == 0:
-                        continue
-                    
-                    # 結果に追加
-                    result = {
-                        "No": no,
-                        "レア": rarity,
-                        "カード名": card_name,
-                        "買取金額": price_int,
-                        "更新日": update_date,
-                        "card_number": card_number,
-                        "弾": set_name
-                    }
-                    
-                    results.append(result)
+                        update_date = ""
+                else:
+                    continue
+                
+                # 共通: 空のデータはスキップ
+                if not card_name or not price or "¥" not in price:
+                    continue
+                
+                # 型番を抽出（Noカラムとカード名の両方から試行）
+                card_number = no if no else extract_card_number(card_name)
+                if not card_number:
+                    card_number = extract_card_number(card_name)
+                
+                # 価格を数値に変換
+                price_int = clean_price(price)
+                
+                # 価格が0の場合はスキップ（データが不正な可能性）
+                if price_int == 0:
+                    continue
+                
+                # 結果に追加
+                result = {
+                    "No": no,
+                    "レア": rarity,
+                    "カード名": card_name,
+                    "買取金額": price_int,
+                    "更新日": update_date,
+                    "card_number": card_number,
+                    "弾": set_name
+                }
+                results.append(result)
         
         browser.close()
     

@@ -117,10 +117,25 @@ def _normalize_card_name(name: str) -> str:
     return name
 
 
-def search_cardrush(page, keyword: str, target_name: str = "") -> Optional[Dict]:
+def _filter_masbo_candidates(candidates: list) -> list:
+    """
+    レアがマスボの場合の候補を絞る。
+    「マスターボールミラー」を含む商品のみにし、状態表記のないものを優先する。
+    """
+    if not candidates:
+        return []
+    masbo_only = [p for p in candidates if "マスターボールミラー" in p.get("name", "")]
+    if not masbo_only:
+        return []
+    no_condition = [p for p in masbo_only if "状態" not in p.get("name", "")]
+    return no_condition if no_condition else masbo_only
+
+
+def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "") -> Optional[Dict]:
     """
     カードラッシュで検索して、在庫ありの最安値商品情報を取得
     タイムアウトが発生しても画像だけは取得を試みる
+    rarity: レア（マスボの場合は「マスターボールミラー」の価格を取得する）。
     """
     image_url = None  # エラー時でも画像取得を試みるため、外側で定義
     
@@ -290,6 +305,11 @@ def search_cardrush(page, keyword: str, target_name: str = "") -> Optional[Dict]
         if product_items:
             # 元カード名とマッチする商品だけを抽出
             matched_items = [p for p in product_items if p.get('name_match')]
+            # レアがマスボの場合は「マスターボールミラー」の商品に絞り、状態なしを優先
+            if rarity == "マスボ":
+                matched_items = _filter_masbo_candidates(matched_items)
+                if matched_items:
+                    print(f"    マスボ: マスターボールミラー対象 {len(matched_items)} 件")
             
             # マッチする商品がある場合のみ、その中から最安値を探す
             if matched_items:
@@ -311,6 +331,11 @@ def search_cardrush(page, keyword: str, target_name: str = "") -> Optional[Dict]
         if out_of_stock_items:
             # 元カード名とマッチする在庫なし商品のみを抽出
             matched_out_of_stock = [p for p in out_of_stock_items if p.get('name_match')]
+            # レアがマスボの場合は「マスターボールミラー」の商品に絞り、状態なしを優先
+            if rarity == "マスボ":
+                matched_out_of_stock = _filter_masbo_candidates(matched_out_of_stock)
+                if matched_out_of_stock:
+                    print(f"    マスボ: マスターボールミラー対象(在庫なし) {len(matched_out_of_stock)} 件")
             
             if matched_out_of_stock:
                 print(f"  在庫ありの商品が見つかりませんでした。在庫なしの商品から価格と画像を取得します...")
@@ -573,9 +598,10 @@ def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = Fal
                 results.append(row)
                 continue
             
-            # カードラッシュで検索（元のカード名も渡して、同名カードを優先してマッチさせる）
+            # カードラッシュで検索（元のカード名・レアも渡す。マスボの場合はマスターボールミラーを取得）
             target_name = row.get('カード名', '').strip()
-            rush_data = search_cardrush(page, keyword, target_name=target_name)
+            rarity = row.get('レア', '').strip()
+            rush_data = search_cardrush(page, keyword, target_name=target_name, rarity=rarity)
             
             # リクエスト間に待機時間を入れる
             wait_time = 2.5  # 2.5秒待機

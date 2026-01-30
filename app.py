@@ -5,7 +5,6 @@ Streamlitで作成
 import streamlit as st
 import pandas as pd
 import re
-import random
 import time
 from typing import Optional
 
@@ -391,24 +390,14 @@ def display_card_view(df, key_prefix="card_view"):
     current_page_df = df.iloc[start_idx:end_idx]
     
     # ページネーションコントロール（上側：統一版）
-    # 下部「次へ」押下時：このタブの上部ページネーション付近へスクロール（autofocus + 失敗時は JS で補完）
+    # 下部「次へ」押下時：このタブの上部ページネーション付近へスクロール（JS のみ・autofocus なし）
+    # autofocus/不可視 input は Firefox でボタンが効かなくなる・Chrome でページが進まないことがあるため廃止
     if st.session_state.get("scroll_to_top") and st.session_state.get("scroll_to_top_target") == key_prefix:
-        # 毎回必ず別の HTML にし、Streamlit がブロックを再利用しないようにする（autofocus が確実に発火するように）
-        ts = int(time.time() * 1000)
-        rnd = random.randint(0, 999999)
-        dummy_id = f"dummy-focus-{key_prefix}-{ts}-{rnd}"
         marker_id = f"page-top-marker-{key_prefix}"
-        # 1) autofocus でスクロール（体感7割成功）
-        st.markdown(
-            f'<div style="height:0;width:0;overflow:hidden;" data-scroll-ts="{ts}" data-scroll-rnd="{rnd}">'
-            f'<span style="display:none;">{ts}-{rnd}</span>'
-            f'<input type="text" id="{dummy_id}" autofocus style="opacity:0;" tabindex="-1" /></div>',
-            unsafe_allow_html=True,
-        )
-        # 2) 失敗時のフォールバック：約400ms後に scrollIntoView（同一ドキュメントなのでデプロイ先でも動く）
+        go = f"var m=document.getElementById('{marker_id}');if(m)m.scrollIntoView({{behavior:'auto',block:'start'}});"
         st.markdown(
             f'<img src="x" style="display:none;" '
-            f'onerror="setTimeout(function(){{var m=document.getElementById(\'{marker_id}\');if(m)m.scrollIntoView({{behavior:\'auto\',block:\'start\'}});}}, 400);" />',
+            f'onerror="setTimeout(function(){{{go}}}, 300);setTimeout(function(){{{go}}}, 700);setTimeout(function(){{{go}}}, 1100);" />',
             unsafe_allow_html=True,
         )
         del st.session_state["scroll_to_top"]
