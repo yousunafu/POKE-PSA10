@@ -105,6 +105,7 @@ def _normalize_card_name(name: str) -> str:
     カード名のゆらぎを吸収するために正規化するヘルパー
     - 空白・全角空白の削除
     - 括弧や装飾記号の削除
+    - 大文字→小文字（Vstar/VSTAR などの表記ゆれを吸収）
     """
     if not name:
         return ""
@@ -114,6 +115,7 @@ def _normalize_card_name(name: str) -> str:
     name = re.split(r'[（(]', name)[0]
     # 装飾用の記号を削除
     name = re.sub(r'[【】\[\]（）\(\)「」『』<>＜＞:：・、，,\s]', '', name)
+    name = name.lower()
     return name
 
 
@@ -352,58 +354,13 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "")
             else:
                 print(f"  在庫なしリストにも該当カード名({target_name})を含む商品が見つかりませんでした (全{len(out_of_stock_items)}件)")
         
-        # 商品が全く見つからない場合、画像だけでも取得を試みる
-        print(f"  商品が見つかりませんでした。画像のみ取得を試みます...")
-        
-        # 検索結果ページから最初の商品画像を取得（在庫状況に関係なく）
-        image_url = None
-        try:
-            # 検索結果ページの最初の商品リンクから画像を取得
-            first_product_link = page.query_selector("a[href*='/product/']")
-            if first_product_link:
-                image_url = first_product_link.evaluate("""
-                    (element) => {
-                        let parent = element.closest('li, div[class*="product"], div[class*="item"], article, a[class*="product"]');
-                        if (!parent) parent = element.parentElement;
-                        
-                        if (!parent) return null;
-                        
-                        let img = parent.querySelector('img[src*="product"], img[src*="card"], img[src*=".jpg"], img[src*=".png"], img[src*=".webp"]');
-                        
-                        if (!img) {
-                            let prev = element.previousElementSibling;
-                            while (prev) {
-                                img = prev.querySelector('img');
-                                if (img) break;
-                                prev = prev.previousElementSibling;
-                            }
-                        }
-                        
-                        if (!img && parent) {
-                            img = parent.querySelector('img');
-                        }
-                        
-                        return img ? img.src : null;
-                    }
-                """)
-                
-                # URLを正規化
-                if image_url:
-                    if image_url.startswith('//'):
-                        image_url = 'https:' + image_url
-                    elif image_url.startswith('/'):
-                        image_url = f"https://www.cardrush-pokemon.jp{image_url}"
-                    elif not image_url.startswith('http'):
-                        image_url = f"https://www.cardrush-pokemon.jp/{image_url}"
-        except Exception as e:
-            print(f"    画像取得エラー: {e}")
-        
-        # 画像があれば返す
+        # マッチする商品が1件もない場合は、別カードの画像を表示しないよう画像も空で返す
+        print(f"  該当する商品が見つかりませんでした。")
         return {
             'price': None,
             'stock': None,
             'url': None,
-            'image_url': image_url or '',
+            'image_url': '',
             'product_name': ''
         }
         
