@@ -16,7 +16,7 @@
 
 ---
 
-## 置き場所の選択肢は3つ
+## 置き場所の選択肢は4つ
 
 ### 🅰️ A. 「看板だけ」ネットに出す（厨房は置かない）
 
@@ -76,6 +76,36 @@
 
 ---
 
+### 🅳️ D. 全部 Lightsail 1台に載せる（React も Python も）
+
+**やること**  
+・**1台の Lightsail**（例: 2GB プラン）に、**React（フロント）** と **Python/FastAPI（API）** の両方を載せる。  
+・同じ台で **定期スクレイプ**（10:00・18:00 JST の cron）も回せる。
+
+- **どこに置く？** … **Lightsail 1台だけ**
+- **イメージ**  
+  - Nginx が「看板」（React のビルド結果）を配信しつつ、「/api へのアクセス」を Python（uvicorn）に渡す。  
+  - 同じサーバーに `merged_card_data.csv` を置き、FastAPI がそれを読む。  
+  - cron で `scrape_otachu.py` → `scrape_rush.py` を実行し、CSV を更新。
+
+**いいところ**  
+・**React も Python もスクレイプも全部 1台・1サービス**で完結。  
+・料金は Lightsail の月額（2GB なら約 $10）だけ。Vercel / Railway を別に契約しなくてよい。  
+・「全部 AWS の Lightsail に寄せる」形にできる。
+
+**わるいところ**  
+・Nginx・systemd・cron の設定を自分でする必要がある。  
+・OS のパッチや再起動も自分で管理。インスタンスが落ちたら全部止まるので監視が欲しい。
+
+**技術的なイメージ（1台の中身）**  
+1. **Nginx** … 80/443 で受け付け。`/` は React の静的ファイル（`npm run build` の結果）、`/api` は FastAPI（例: `http://127.0.0.1:8000`）にリバースプロキシ。  
+2. **FastAPI** … systemd で uvicorn を常時起動。`merged_card_data.csv` を読んで JSON を返す。  
+3. **cron** … 10:00・18:00 JST に `scrape_otachu.py` → `scrape_rush.py` を実行し、同じサーバー上の CSV を更新。
+
+**具体的な手順**は [docs/LIGHTSAIL_ONE_SERVER.md](docs/LIGHTSAIL_ONE_SERVER.md) にまとめています。
+
+---
+
 ## まとめ：どれを選べばいい？
 
 | あなたの気持ち | 選ぶとよい |
@@ -83,10 +113,12 @@
 | とにかく**簡単に・無料で**公開したい | **A**（Vercel だけ・データは JSON で同梱） |
 | 今の **FastAPI をそのまま**本番でも使いたい | **B**（Vercel + Railway/Render） |
 | **会社で AWS を使う**決まりがある | **C**（AWS） |
+| **React も Python もスクレイプも全部 1台に寄せたい** | **D**（Lightsail 1台に全部載せる） |
 
 - **「まず動かしたい」** → A が一番分かりやすい。  
 - **「API のまま運用したい」** → B。  
-- **「AWS でやりたい」** → C（そのときは設定手順を別途まとめます）。
+- **「AWS でやりたい」** → C（そのときは設定手順を別途まとめます）。  
+- **「全部 Lightsail 1台で完結させたい」** → D（Nginx + React + FastAPI + cron を 1台で設定）。
 
 ---
 

@@ -136,19 +136,19 @@ def _normalize_card_name(name: str) -> str:
 def _check_card_number_in_text(target_number: str, text: str) -> bool:
     """
     商品名・URL に型番が含まれるか確認（表記ゆれ対応）。
-    target_number="091/064" のとき、text 内に "091" + (記号or空白) + "064" が含まれるか。
-    091-064, 091_064 などもヒットする。
+    「/」で区切ったブロック単位で一致させる（227/S-P と 227/SM-P を区別する）。
+    例: target_number="227/S-P" → text 内に "227" と "S-P" がこの順で含まれるか。
+    例: target_number="091/064" → "091" と "064" がこの順で含まれるか。
     """
     if not target_number or not text:
         return False
-    # 区切り文字で分割（英数字の塊だけ残す）
-    parts = re.split(r'[^a-zA-Z0-9]', target_number.strip())
-    parts = [p for p in parts if p]
+    # 「/」で区切ってブロック単位に（S-P と SM-P を区別するため、英数字以外で細かく分割しない）
+    parts = [s.strip() for s in target_number.strip().split("/") if s.strip()]
     if not parts:
         return False
     if len(parts) == 1:
         return parts[0] in text
-    # "091.*064" のように間に非単語文字を許容するパターン
+    # 各ブロックがこの順で出現するパターン（間に任意の文字を許容）
     pattern = r'.*'.join([re.escape(p) for p in parts])
     return re.search(pattern, text) is not None
 
@@ -196,6 +196,17 @@ def _filter_masbo_candidates(candidates: list) -> list:
         return []
     no_condition = [p for p in masbo_only if "状態" not in p.get("name", "")]
     return no_condition if no_condition else masbo_only
+
+
+def _prefer_without_mikaeri(candidates: list) -> list:
+    """
+    候補のうち「未開封」が商品名に含まれないものを優先する。
+    「未開封」を含まない商品が1件でもあればそれだけに絞り、なければそのまま返す。
+    """
+    if not candidates:
+        return []
+    without_mikaeri = [p for p in candidates if "未開封" not in p.get("name", "")]
+    return without_mikaeri if without_mikaeri else candidates
 
 
 def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "", card_number: str = "") -> Optional[Dict]:
@@ -372,6 +383,8 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "",
                     'image_url': image_url or '',
                     # 元カード名とのマッチしているかどうか（優先度付けに使用）
                     'name_match': name_match,
+                    # 型番一致（card_number 指定時のみ候補を絞るために使用）
+                    'number_match': has_number_match,
                 }
                 
                 # 在庫がある場合は在庫ありリストに、ない場合は在庫なしリストに追加
@@ -385,56 +398,44 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "",
                 print(f"    商品情報取得エラー: {e}")
                 continue
         
-        # 在庫ありの商品がある場合
-        if product_items:
-            # 元カード名とマッチする商品だけを抽出
-            matched_items = [p for p in product_items if p.get('name_match')]
-            # レアがマスボの場合は「マスターボールミラー」の商品に絞り、状態なしを優先
-            if rarity == "マスボ":
-                matched_items = _filter_masbo_candidates(matched_items)
-                if matched_items:
-                    print(f"    マスボ: マスターボールミラー対象 {len(matched_items)} 件")
-            
-            # マッチする商品がある場合のみ、その中から最安値を探す
-            if matched_items:
-                cheapest = min(matched_items, key=lambda x: x['price'])
+        # 在庫あり・在庫なしの両方からマッチする商品を抽出（型番指定時は型番一致も必須）
+        matched_items = [
+            p for p in product_items
+            if p.get('name_match') and (not card_number or p.get('number_match'))
+        ]
+        matched_out_of_stock = [
+            p for p in (out_of_stock_items or [])
+            if p.get('name_match') and (not card_number or p.get('number_match'))
+        ]
+        # レアがマスボの場合は「マスターボールミラー」の商品に絞り、状態なしを優先
+        if rarity == "マスボ":
+            matched_items = _filter_masbo_candidates(matched_items)
+            matched_out_of_stock = _filter_masbo_candidates(matched_out_of_stock)
+            if matched_items or matched_out_of_stock:
+                print(f"    マスボ: マスターボールミラー対象 在庫あり{len(matched_items)}件 / 在庫なし{len(matched_out_of_stock)}件")
+
+        # 在庫あり・在庫なしをまとめて「未開封」が付いていないものを優先し、その中で最安値を1件選ぶ
+        combined = matched_items + matched_out_of_stock
+        if combined:
+            preferred = _prefer_without_mikaeri(combined)
+            cheapest = min(preferred, key=lambda x: x['price'])
+            if cheapest.get('stock') is not None:
                 print(f"    在庫ありリストから該当カード名({target_name})を含む商品を選択: {cheapest['name'][:50]} ({cheapest['price']}円)")
-                return {
-                    'price': cheapest['price'],
-                    'stock': cheapest['stock'],
-                    'url': cheapest['url'],
-                    'image_url': cheapest['image_url'],
-                    'product_name': cheapest['name']
-                }
             else:
-                # マッチする商品がない場合は、「見つからなかった」として処理を続行
-                # (無理やり違うカードを返さないようにする)
-                print(f"    在庫ありリストに該当カード名({target_name})を含む商品が見つかりませんでした (全{len(product_items)}件)")
-        
-        # 在庫ありの商品がない場合、在庫なしの商品から価格と画像を取得
+                print(f"    在庫なしリストから該当カード名({target_name})を含む商品を選択: {cheapest['name'][:50]} ({cheapest['price']}円)")
+            return {
+                'price': cheapest['price'],
+                'stock': cheapest.get('stock'),
+                'url': cheapest['url'],
+                'image_url': cheapest['image_url'],
+                'product_name': cheapest['name']
+            }
+
+        # マッチする商品が1件もない場合
+        if product_items:
+            print(f"    在庫ありリストに該当カード名({target_name})を含む商品が見つかりませんでした (全{len(product_items)}件)")
         if out_of_stock_items:
-            # 元カード名とマッチする在庫なし商品のみを抽出
-            matched_out_of_stock = [p for p in out_of_stock_items if p.get('name_match')]
-            # レアがマスボの場合は「マスターボールミラー」の商品に絞り、状態なしを優先
-            if rarity == "マスボ":
-                matched_out_of_stock = _filter_masbo_candidates(matched_out_of_stock)
-                if matched_out_of_stock:
-                    print(f"    マスボ: マスターボールミラー対象(在庫なし) {len(matched_out_of_stock)} 件")
-            
-            if matched_out_of_stock:
-                print(f"  在庫ありの商品が見つかりませんでした。在庫なしの商品から価格と画像を取得します...")
-                # マッチしたものの中から最安値を取得
-                cheapest_out_of_stock = min(matched_out_of_stock, key=lambda x: x['price'])
-                print(f"    在庫なしリストから該当カード名({target_name})を含む商品を選択: {cheapest_out_of_stock['name'][:50]} ({cheapest_out_of_stock['price']}円)")
-                return {
-                    'price': cheapest_out_of_stock['price'],  # 価格を返す
-                    'stock': None,  # 在庫なし
-                    'url': cheapest_out_of_stock['url'],
-                    'image_url': cheapest_out_of_stock['image_url'],
-                    'product_name': cheapest_out_of_stock['name']
-                }
-            else:
-                print(f"  在庫なしリストにも該当カード名({target_name})を含む商品が見つかりませんでした (全{len(out_of_stock_items)}件)")
+            print(f"  在庫なしリストにも該当カード名({target_name})を含む商品が見つかりませんでした (全{len(out_of_stock_items)}件)")
         
         # マッチする商品が1件もない場合は、別カードの画像を表示しないよう画像も空で返す
         print(f"  該当する商品が見つかりませんでした。")
