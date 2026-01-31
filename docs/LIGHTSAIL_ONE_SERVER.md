@@ -256,6 +256,62 @@ sudo certbot --nginx -d example.com
 
 ---
 
+## Lightsail を更新する（Git の最新を取り込む）
+
+GitHub に push したあと、Lightsail 上のコードやデータを最新にする方法です。
+
+### 手動で更新する（推奨）
+
+SSH で Lightsail に入り、次の順で実行します。
+
+```bash
+# 1. アプリのディレクトリへ
+cd /home/ubuntu/app   # または $APP_DIR
+
+# 2. 最新のコードを取得
+git pull
+
+# 3. フロント（React）を再ビルド
+cd frontend && npm ci && npm run build && cd ..
+
+# 4. API を再起動（CSV のパスやコード変更を反映）
+sudo systemctl restart poke-psa-api
+```
+
+- **スクレイプのコードだけ変えた場合**: `git pull` だけでよい。API 再起動は不要（API は CSV を読むだけ）。次回の cron（10時・18時）で新しいスクリプトが使われる。すぐ反映させたい場合は「スクレイプの手動実行」を 1 回回す。
+- **フロントだけ変えた場合**: `git pull` と `frontend` の `npm run build` だけでよい（API 再起動は不要）。
+- **バックエンド（API）のコードを変えた場合**: `git pull` と `sudo systemctl restart poke-psa-api`。
+- **データ（CSV）だけ更新したい場合**: 上記の「スクレイプの手動実行」で `scrape_otachu.py` → `scrape_rush.py` を回すか、ローカルで作った `merged_card_data.csv` を `scp` でアップロードする。
+
+### サーバー上に「更新用スクリプト」を置く（任意）
+
+毎回コマンドを打ちたくない場合は、Lightsail 上に次のようなスクリプトを置いておき、更新時に `./update.sh` のように実行できます。
+
+```bash
+# /home/ubuntu/app/update.sh を作成
+#!/bin/bash
+set -e
+cd /home/ubuntu/app
+git pull
+cd frontend && npm ci && npm run build && cd ..
+sudo systemctl restart poke-psa-api
+echo "更新完了"
+```
+
+```bash
+chmod +x /home/ubuntu/app/update.sh
+# 更新するとき: /home/ubuntu/app/update.sh
+```
+
+### GitHub に push したら自動で Lightsail を更新したい場合
+
+- **方法A（GitHub Actions + SSH）**: リポジトリに push したら、GitHub Actions が Lightsail に SSH して `git pull` とビルド・再起動を実行するワークフローを組む。Lightsail の SSH 秘密鍵を GitHub の Secrets に登録する必要がある。
+- **方法B（Lightsail 上で cron）**: Lightsail の cron で「5分ごとに `git pull` し、差分があればビルド・再起動」するスクリプトを回す。設定はやや複雑だが、GitHub 側に鍵を置かなくてよい。
+
+まずは **手動で SSH → git pull → ビルド・再起動** で運用し、必要になったら自動化を検討するとよいです。
+
+---
+
 ## トラブルシュート
 
 - **502 Bad Gateway**  
