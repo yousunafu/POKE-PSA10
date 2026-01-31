@@ -100,9 +100,21 @@ def extract_stock_count(stock_text: str) -> Optional[int]:
     return None
 
 
+def _fullwidth_to_halfwidth(s: str) -> str:
+    """全角英数字・記号（ｅｘ、Ｖ、＆等）を半角に変換する。"""
+    result = []
+    for c in s:
+        if '\uff01' <= c <= '\uff5e':  # 全角 ! ～ ~
+            result.append(chr(ord(c) - 0xFEE0))
+        else:
+            result.append(c)
+    return ''.join(result)
+
+
 def _normalize_card_name(name: str) -> str:
     """
     カード名のゆらぎを吸収するために正規化するヘルパー
+    - 全角英数字・記号を半角に統一（ｅｘ→ex、Ｖ→V、＆→&）
     - 空白・全角空白の削除
     - 括弧や装飾記号の削除
     - 大文字→小文字（Vstar/VSTAR などの表記ゆれを吸収）
@@ -111,10 +123,12 @@ def _normalize_card_name(name: str) -> str:
         return ""
     # 前後の空白を削除
     name = name.strip()
+    # 全角英数字・記号を半角に（ラティアスｅｘ、ブースターＶ、＆ 等）
+    name = _fullwidth_to_halfwidth(name)
     # 「（」「(」以降の補足情報は一旦切り落とす（例: ピカチュウGX(SA) -> ピカチュウGX）
     name = re.split(r'[（(]', name)[0]
-    # 装飾用の記号を削除
-    name = re.sub(r'[【】\[\]（）\(\)「」『』<>＜＞:：・、，,\s]', '', name)
+    # 装飾用の記号を削除（☆★ はカード名の装飾で使われるためここで除去）
+    name = re.sub(r'[【】\[\]（）\(\)「」『』<>＜＞:：・、，,\s☆★]', '', name)
     name = name.lower()
     return name
 
@@ -145,6 +159,8 @@ def _target_tokens_all_in_product(normalized_target: str, normalized_product: st
     各ブロックが商品名に含まれるか判定する。
     「カシオペアsv6a」vs「カシオペアsar{091/064}sv6a」のように
     商品名の途中に【SAR】等が挟まるケースでマッチさせる。
+    「ex」+ セットコード（sv5k, sv7 等）は境界でさらに分割し、
+    タケルライコex・テラパゴスex などがマッチするようにする。
     """
     if not normalized_target or not normalized_product:
         return False
@@ -154,6 +170,15 @@ def _target_tokens_all_in_product(normalized_target: str, normalized_product: st
         normalized_target,
     )
     tokens = [t for t in tokens if len(t) >= 1]
+    # 「ex」+ セットコード（sv5k, sv8a, sv7, s10a 等）の境界でさらに分割（商品名の【SAR】等で分断されるケース用）
+    expanded = []
+    for t in tokens:
+        m = re.match(r'^ex(s[a-z]*\d+[a-z]?)$', t, re.IGNORECASE)
+        if m:
+            expanded.extend(["ex", m.group(1).lower()])
+        else:
+            expanded.append(t)
+    tokens = expanded
     if not tokens:
         return normalized_target in normalized_product
     return all(t in normalized_product for t in tokens)
@@ -534,7 +559,7 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "",
         }
 
 
-def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = False, filter_card_number: str = None, last_n: int = None):
+def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = False, filter_card_number: str = None, filter_card_numbers: list = None, last_n: int = None):
     """
     カードラッシュのデータをスクレイピングして統合
     
@@ -542,15 +567,25 @@ def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = Fal
         input_csv: 入力CSVファイル
         output_csv: 出力CSVファイル
         debug_mode: デバッグモード（先頭5件のみ）
-        filter_card_number: 特定のカード番号でフィルタリング（例: "058/051"）
+        filter_card_number: 特定のカード番号でフィルタリング（1件、例: "058/051"）
+        filter_card_numbers: 複数のカード番号でフィルタリング（例: ["236/187", "132/106"]）
         last_n: 最後N件のみ処理（例: 30）
     """
     # CSVを読み込む
     print(f"CSVファイルを読み込み中: {input_csv}")
     data = read_otachu_csv(input_csv)
     
-    # 特定のカード番号でフィルタリング
-    if filter_card_number:
+    # 複数カード番号でフィルタリング（--cards / --cards-file）
+    if filter_card_numbers is not None:
+        original_count = len(data)
+        allowed = {s.strip() for s in filter_card_numbers if s and str(s).strip()}
+        data = [row for row in data if row.get('card_number', '').strip() in allowed]
+        print(f"カード番号リストでフィルタリング: {original_count}件 -> {len(data)}件")
+        if len(data) == 0:
+            print("エラー: 指定したカード番号がCSVにありませんでした")
+            return
+    # 単一カード番号でフィルタリング（--card）
+    elif filter_card_number:
         original_count = len(data)
         data = [row for row in data if row.get('card_number', '').strip() == filter_card_number]
         print(f"カード番号 '{filter_card_number}' でフィルタリング: {original_count}件 -> {len(data)}件")
@@ -689,10 +724,27 @@ def main():
     
     # 特定のカード番号でフィルタリング（--card 058/051 のように指定）
     filter_card_number = None
+    filter_card_numbers = None
     if '--card' in sys.argv:
         card_index = sys.argv.index('--card')
         if card_index + 1 < len(sys.argv):
             filter_card_number = sys.argv[card_index + 1]
+    # 複数カード番号でフィルタリング（--cards "236/187 132/106 ..." または --cards-file ファイル）
+    if '--cards-file' in sys.argv:
+        idx = sys.argv.index('--cards-file')
+        if idx + 1 < len(sys.argv):
+            path = sys.argv[idx + 1]
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    filter_card_numbers = [line.strip() for line in f if line.strip()]
+            except FileNotFoundError:
+                print(f"エラー: ファイルが見つかりません: {path}")
+                return
+    if '--cards' in sys.argv and filter_card_numbers is None:
+        idx = sys.argv.index('--cards')
+        if idx + 1 < len(sys.argv):
+            raw = sys.argv[idx + 1]
+            filter_card_numbers = [s.strip() for s in re.split(r'[\s,]+', raw) if s.strip()]
     
     # 最後N件のみ処理（--last 30 または --tail 30 のように指定）
     last_n = None
@@ -722,13 +774,17 @@ def main():
         print("=" * 50)
         print(f"フィルタモード: カード番号 '{filter_card_number}' のみ処理します")
         print("=" * 50)
+    if filter_card_numbers:
+        print("=" * 50)
+        print(f"フィルタモード: カード番号リスト {len(filter_card_numbers)} 件のみ処理します")
+        print("=" * 50)
     
     if last_n:
         print("=" * 50)
         print(f"最後{last_n}件のみ処理します")
         print("=" * 50)
     
-    scrape_cardrush_data(input_csv, output_csv, debug_mode=debug_mode, filter_card_number=filter_card_number, last_n=last_n)
+    scrape_cardrush_data(input_csv, output_csv, debug_mode=debug_mode, filter_card_number=filter_card_number, filter_card_numbers=filter_card_numbers, last_n=last_n)
     
     print("\n処理が完了しました")
 
