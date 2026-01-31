@@ -16,6 +16,9 @@ function App() {
     keyword: "",
     inStockOnly: false,
     profitOnly: false,
+    priceMin: null,
+    priceMax: null,
+    miscExpenses: 0,
   });
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -37,6 +40,9 @@ function App() {
       .finally(() => setLoading(false));
   }, []);
 
+  const miscExpenses = Number(filters.miscExpenses) || 0;
+  const displayProfit = (card) => (card.profit != null ? card.profit - miscExpenses : 0);
+
   const filteredData = useMemo(() => {
     return cards
       .filter((card) => {
@@ -45,24 +51,29 @@ function App() {
           const text = `${card.card_name} ${card.card_number} ${card.no}`.toLowerCase();
           if (!text.includes(kw)) return false;
         }
+        const sell = Number(card.sell_price) || 0;
+        if (filters.priceMin != null && filters.priceMin !== "" && sell < Number(filters.priceMin))
+          return false;
+        if (filters.priceMax != null && filters.priceMax !== "" && sell > Number(filters.priceMax))
+          return false;
         if (filters.inStockOnly && !card.stock_normalized.includes("在庫あり"))
           return false;
-        if (filters.profitOnly && card.profit <= 0) return false;
+        if (filters.profitOnly && displayProfit(card) <= 0) return false;
         return true;
       })
-      .sort((a, b) => b.profit - a.profit);
-  }, [cards, filters]);
+      .sort((a, b) => displayProfit(b) - displayProfit(a));
+  }, [cards, filters, miscExpenses]);
 
   const stats = useMemo(
     () => ({
       total: cards.length,
       filtered: filteredData.length,
-      profitable: filteredData.filter((c) => c.profit > 0).length,
+      profitable: filteredData.filter((c) => displayProfit(c) > 0).length,
       inStock: filteredData.filter((c) =>
         c.stock_normalized.includes("在庫あり")
       ).length,
     }),
-    [cards.length, filteredData]
+    [cards.length, filteredData, miscExpenses]
   );
 
   useEffect(() => {
@@ -171,7 +182,7 @@ function App() {
                 <p className="text-text-muted text-sm mb-4">
                   PCで見やすいテーブル形式。各列クリックでソート可能。
                 </p>
-                <TableView data={filteredData} />
+                <TableView data={filteredData} miscExpenses={miscExpenses} />
               </section>
 
               <section className="bg-bg-card border border-border-custom rounded-lg p-4 shadow-sm">
@@ -201,7 +212,7 @@ function App() {
               currentPage={currentPage}
               onPageChange={setCurrentPage}
             />
-            <CardList data={currentData} />
+            <CardList data={currentData} miscExpenses={miscExpenses} />
             <Pagination
               totalItems={filteredData.length}
               itemsPerPage={itemsPerPage}

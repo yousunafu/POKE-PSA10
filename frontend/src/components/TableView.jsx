@@ -16,15 +16,20 @@ function formatProfitCell(profit) {
   return <span>{profit.toLocaleString()}円</span>;
 }
 
-export default function TableView({ data }) {
+function getDisplayProfit(card, miscExpenses = 0) {
+  const p = card.profit != null ? card.profit : 0;
+  return p - (Number(miscExpenses) || 0);
+}
+
+export default function TableView({ data, miscExpenses = 0 }) {
   const [sortKey, setSortKey] = useState("profit");
-  const [sortAsc, setSortAsc] = useState(false);
+  const [sortAsc, setSortAsc] = useState(true); // true = 降順（利益高い順がデフォルト）
 
   const sortedData = useMemo(() => {
     const arr = [...(data || [])];
     arr.sort((a, b) => {
-      let va = a[sortKey];
-      let vb = b[sortKey];
+      let va = sortKey === "profit" ? getDisplayProfit(a, miscExpenses) : a[sortKey];
+      let vb = sortKey === "profit" ? getDisplayProfit(b, miscExpenses) : b[sortKey];
       if (typeof va === "string") va = (va || "").toLowerCase();
       if (typeof vb === "string") vb = (vb || "").toLowerCase();
       if (va < vb) return sortAsc ? 1 : -1;
@@ -32,13 +37,13 @@ export default function TableView({ data }) {
       return 0;
     });
     return arr;
-  }, [data, sortKey, sortAsc]);
+  }, [data, sortKey, sortAsc, miscExpenses]);
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortAsc((s) => !s);
     else {
       setSortKey(key);
-      setSortAsc(key === "profit" ? false : true);
+      setSortAsc(key === "profit"); // 利益はデフォルト降順（高い順）、他は昇順
     }
   };
 
@@ -59,10 +64,12 @@ export default function TableView({ data }) {
     );
   }
 
-  const avgProfit =
-    sortedData.reduce((acc, c) => acc + c.profit, 0) / sortedData.length;
-  const maxProfit = Math.max(...sortedData.map((c) => c.profit));
-  const minProfit = Math.min(...sortedData.map((c) => c.profit));
+  const displayProfits = sortedData.map((c) => getDisplayProfit(c, miscExpenses));
+  const avgProfit = displayProfits.length
+    ? displayProfits.reduce((acc, p) => acc + p, 0) / displayProfits.length
+    : 0;
+  const maxProfit = displayProfits.length ? Math.max(...displayProfits) : 0;
+  const minProfit = displayProfits.length ? Math.min(...displayProfits) : 0;
 
   return (
     <div className="space-y-4">
@@ -111,7 +118,7 @@ export default function TableView({ data }) {
                     : "—"}
                 </td>
                 <td className="border border-border-custom px-3 py-2">
-                  {formatProfitCell(card.profit)}
+                  {formatProfitCell(getDisplayProfit(card, miscExpenses))}
                 </td>
                 <td className="border border-border-custom px-3 py-2 text-text-muted">
                   {card.stock_normalized}

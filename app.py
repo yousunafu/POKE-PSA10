@@ -264,7 +264,7 @@ def calculate_profit(row):
                 buy_price = float(buy_price) if pd.notna(buy_price) and buy_price != '' else 0
                 sell_price = float(sell_price)
                 if buy_price > 0 and sell_price > 0:
-                    return buy_price - sell_price  # マイナスも含めて返す
+                    return buy_price - sell_price
             except:
                 pass
         return 0  # 在庫なしで販売価格も取得できていない場合は0円
@@ -272,8 +272,7 @@ def calculate_profit(row):
     # CSVに期待利益がある場合はそれを使用
     if pd.notna(row.get('期待利益')) and row.get('期待利益') != '':
         try:
-            profit = float(row['期待利益'])
-            return profit  # マイナスも含めて返す
+            return float(row['期待利益'])
         except:
             pass
     
@@ -285,12 +284,10 @@ def calculate_profit(row):
         buy_price = float(buy_price) if pd.notna(buy_price) and buy_price != '' else 0
         sell_price = float(sell_price) if pd.notna(sell_price) and sell_price != '' else 0
         
-        # 販売価格が取得できていない場合は0円
         if sell_price == 0:
             return 0
         
-        profit = buy_price - sell_price
-        return profit  # マイナスも含めて返す
+        return buy_price - sell_price
     except:
         return 0
 

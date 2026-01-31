@@ -14,7 +14,12 @@ function formatProfit(profit) {
   return <span className="text-text-main">{profit.toLocaleString()}円</span>;
 }
 
-export default function CardList({ data }) {
+function getDisplayProfit(card, miscExpenses = 0) {
+  const p = card.profit != null ? card.profit : 0;
+  return p - (Number(miscExpenses) || 0);
+}
+
+export default function CardList({ data, miscExpenses = 0 }) {
   const [failedImages, setFailedImages] = useState(new Set());
 
   if (!data || data.length === 0) {
@@ -66,7 +71,7 @@ export default function CardList({ data }) {
             )}
             <div className="mb-2">
               <span className="text-text-muted mr-1">予想最大利益:</span>
-              {formatProfit(card.profit)}
+              {formatProfit(getDisplayProfit(card, miscExpenses))}
             </div>
             <div className="text-sm space-y-1">
               <div>
