@@ -6,3 +6,18 @@ body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0.9;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.25s ease-out forwards;
+}

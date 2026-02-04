@@ -1,16 +1,41 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Filters from "./components/Filters";
 import CardList from "./components/CardList";
 import TableView from "./components/TableView";
 import Pagination from "./components/Pagination";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
+const MOBILE_BREAKPOINT = 768;
+const MOBILE_INITIAL_ITEMS = 20;
+const MOBILE_LOAD_MORE = 20;
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    const handler = (e) => setIsMobile(e.matches);
+    handler(mq);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isMobile;
+}
 
 function App() {
+  const isMobile = useIsMobile();
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState("analysis");
+  const [activeTab, setActiveTab] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT
+      ? "research"
+      : "analysis"
+  );
+  const [bottomMenuOpen, setBottomMenuOpen] = useState(false);
+  const [mobileVisibleCount, setMobileVisibleCount] = useState(MOBILE_INITIAL_ITEMS);
+  const loadMoreSentinelRef = useRef(null);
 
   const [filters, setFilters] = useState({
     keyword: "",
@@ -78,6 +103,7 @@ function App() {
 
   useEffect(() => {
     setCurrentPage(1);
+    setMobileVisibleCount(MOBILE_INITIAL_ITEMS);
   }, [filters]);
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -87,9 +113,33 @@ function App() {
   }, [totalPages, currentPage]);
 
   const currentData = useMemo(() => {
+    if (isMobile) {
+      return filteredData.slice(0, mobileVisibleCount);
+    }
     const start = (currentPage - 1) * itemsPerPage;
     return filteredData.slice(start, start + itemsPerPage);
-  }, [filteredData, currentPage]);
+  }, [filteredData, currentPage, isMobile, mobileVisibleCount]);
+
+  const hasMoreMobile = mobileVisibleCount < filteredData.length;
+  const loadMore = useCallback(() => {
+    setMobileVisibleCount((prev) =>
+      Math.min(prev + MOBILE_LOAD_MORE, filteredData.length)
+    );
+  }, [filteredData.length]);
+
+  useEffect(() => {
+    if (!isMobile || !hasMoreMobile) return;
+    const el = loadMoreSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore();
+      },
+      { rootMargin: "100px", threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isMobile, hasMoreMobile, loadMore]);
 
   if (loading) {
     return (
@@ -114,24 +164,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-main flex flex-col md:flex-row font-sans text-text-main">
-      {/* モバイル: フィルター折りたたみ */}
-      <div className="md:hidden p-4 bg-bg-sidebar border-b border-border-custom">
-        <details className="group">
-          <summary className="font-bold cursor-pointer list-none flex items-center gap-2">
-            <span className="group-open:rotate-90 transition-transform">▶</span>
-            🔍 フィルター・統計
-          </summary>
-          <div className="mt-3 -mx-2">
-            <Filters
-              filters={filters}
-              setFilters={setFilters}
-              stats={stats}
-            />
-          </div>
-        </details>
-      </div>
-
+    <div className="min-h-screen bg-bg-main flex flex-col md:flex-row font-sans text-text-main pb-16 md:pb-0">
       {/* デスクトップ: サイドバー */}
       <aside className="hidden md:block w-80 shrink-0 sticky top-0 h-screen overflow-y-auto">
         <Filters filters={filters} setFilters={setFilters} stats={stats} />
@@ -148,28 +181,58 @@ function App() {
         </div>
 
         <div className="mb-4 border-b border-border-custom flex gap-4">
-          <button
-            type="button"
-            className={`px-4 py-2 border-b-2 font-medium transition-colors ${
-              activeTab === "analysis"
-                ? "border-accent text-accent"
-                : "border-transparent text-text-muted hover:text-text-main"
-            }`}
-            onClick={() => setActiveTab("analysis")}
-          >
-            📊 データ分析（PC）
-          </button>
-          <button
-            type="button"
-            className={`px-4 py-2 border-b-2 font-medium transition-colors ${
-              activeTab === "research"
-                ? "border-accent text-accent"
-                : "border-transparent text-text-muted hover:text-text-main"
-            }`}
-            onClick={() => setActiveTab("research")}
-          >
-            📱 現場リサーチ（スマホ）
-          </button>
+          {/* スマホ: 現場リサーチ | データ分析、PC: データ分析 | 現場リサーチ */}
+          {isMobile ? (
+            <>
+              <button
+                type="button"
+                className={`px-4 py-2 border-b-2 font-medium transition-colors ${
+                  activeTab === "research"
+                    ? "border-accent text-accent"
+                    : "border-transparent text-text-muted hover:text-text-main"
+                }`}
+                onClick={() => setActiveTab("research")}
+              >
+                📱 現場リサーチ（スマホ）
+              </button>
+              <button
+                type="button"
+                className={`px-4 py-2 border-b-2 font-medium transition-colors ${
+                  activeTab === "analysis"
+                    ? "border-accent text-accent"
+                    : "border-transparent text-text-muted hover:text-text-main"
+                }`}
+                onClick={() => setActiveTab("analysis")}
+              >
+                📊 データ分析（PC）
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={`px-4 py-2 border-b-2 font-medium transition-colors ${
+                  activeTab === "analysis"
+                    ? "border-accent text-accent"
+                    : "border-transparent text-text-muted hover:text-text-main"
+                }`}
+                onClick={() => setActiveTab("analysis")}
+              >
+                📊 データ分析（PC）
+              </button>
+              <button
+                type="button"
+                className={`px-4 py-2 border-b-2 font-medium transition-colors ${
+                  activeTab === "research"
+                    ? "border-accent text-accent"
+                    : "border-transparent text-text-muted hover:text-text-main"
+                }`}
+                onClick={() => setActiveTab("research")}
+              >
+                📱 現場リサーチ（スマホ）
+              </button>
+            </>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -206,22 +269,75 @@ function App() {
 
           {/* カード一覧 + ページネーション（両タブ共通） */}
           <div>
-            <Pagination
-              totalItems={filteredData.length}
-              itemsPerPage={itemsPerPage}
-              currentPage={currentPage}
-              onPageChange={setCurrentPage}
-            />
+            {!isMobile && (
+              <Pagination
+                totalItems={filteredData.length}
+                itemsPerPage={itemsPerPage}
+                currentPage={currentPage}
+                onPageChange={setCurrentPage}
+              />
+            )}
+            {isMobile && (
+              <p className="text-sm text-text-muted py-2 mb-2">
+                {currentData.length}件表示（{filteredData.length}件中）
+              </p>
+            )}
             <CardList data={currentData} miscExpenses={miscExpenses} />
-            <Pagination
-              totalItems={filteredData.length}
-              itemsPerPage={itemsPerPage}
-              currentPage={currentPage}
-              onPageChange={setCurrentPage}
-            />
+            {isMobile && hasMoreMobile && (
+              <div ref={loadMoreSentinelRef} className="h-4" aria-hidden="true" />
+            )}
+            {!isMobile && (
+              <Pagination
+                totalItems={filteredData.length}
+                itemsPerPage={itemsPerPage}
+                currentPage={currentPage}
+                onPageChange={setCurrentPage}
+              />
+            )}
           </div>
         </div>
       </main>
+
+      {/* モバイル: 固定下部メニュー */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-gray-800 border-t border-gray-700 shadow-lg">
+        <button
+          type="button"
+          onClick={() => setBottomMenuOpen(true)}
+          className="w-full py-4 px-4 font-bold flex items-center justify-center gap-2 text-gray-100 hover:bg-gray-700 transition-colors"
+        >
+          <span>▶</span>
+          <span>🔍 フィルター・統計</span>
+        </button>
+      </div>
+
+      {/* モバイル: 下部メニューから開くサイドバー（ボトムシート） */}
+      {bottomMenuOpen && (
+        <>
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="閉じる"
+            className="md:hidden fixed inset-0 bg-black/50 z-50"
+            onClick={() => setBottomMenuOpen(false)}
+            onKeyDown={(e) => e.key === "Escape" && setBottomMenuOpen(false)}
+          />
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 max-h-[85vh] overflow-y-auto bg-bg-sidebar border-t border-border-custom rounded-t-xl shadow-2xl animate-slide-up">
+            <div className="sticky top-0 bg-bg-sidebar flex justify-between items-center p-4 border-b border-border-custom">
+              <span className="font-bold text-accent">🔍 フィルター・統計</span>
+              <button
+                type="button"
+                onClick={() => setBottomMenuOpen(false)}
+                className="px-3 py-1 rounded border border-border-custom hover:bg-accent-light/20"
+              >
+                閉じる
+              </button>
+            </div>
+            <div className="p-4">
+              <Filters filters={filters} setFilters={setFilters} stats={stats} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
