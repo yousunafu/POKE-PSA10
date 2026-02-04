@@ -80,6 +80,7 @@ export default function TableView({ data, miscExpenses = 0 }) {
               <Th label="画像" colKey="card_name" />
               <Th label="カード名" colKey="card_name" />
               <Th label="型番" colKey="card_number" />
+              <Th label="相場" colKey="pokeca_chart_url" />
               <Th label="買取価格（おたちゅう）" colKey="buy_price" />
               <Th label="販売価格（ラッシュ）" colKey="sell_price" />
               <Th label="予想最大利益" colKey="profit" />
@@ -108,6 +109,20 @@ export default function TableView({ data, miscExpenses = 0 }) {
                 </td>
                 <td className="border border-border-custom px-3 py-2 text-text-muted">
                   {card.card_number || "—"}
+                </td>
+                <td className="border border-border-custom px-3 py-2">
+                  {card.pokeca_chart_url ? (
+                    <a
+                      href={card.pokeca_chart_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent hover:underline text-xs"
+                    >
+                      📊 相場
+                    </a>
+                  ) : (
+                    <span className="text-text-muted text-xs">—</span>
+                  )}
                 </td>
                 <td className="border border-border-custom px-3 py-2">
                   {Number(card.buy_price).toLocaleString()}円

@@ -699,6 +699,27 @@ def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = Fal
         
         browser.close()
     
+    # (型番, カード名) で重複をまとめ、更新日が新しい行だけ残す
+    if results:
+        key_cols = ('card_number', 'カード名')
+        def _parse_date(s):
+            if not s or not str(s).strip():
+                return (0, 0, 0)
+            parts = str(s).strip().split('/')
+            if len(parts) == 3:
+                y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+                return (y, m, d)
+            if len(parts) == 2:
+                m, d = int(parts[0]), int(parts[1])
+                return (0, m, d)
+            return (0, 0, 0)
+        by_key = {}
+        for row in results:
+            key = tuple((row.get(k) or '').strip() for k in key_cols)
+            if key not in by_key or _parse_date(row.get('更新日')) > _parse_date(by_key[key].get('更新日')):
+                by_key[key] = row
+        results = list(by_key.values())
+
     # CSVに保存
     print(f"\n結果をCSVに保存中: {output_csv}")
     if results:

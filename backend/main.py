@@ -1,7 +1,9 @@
+import json
+import os
+
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import pandas as pd
-import os
 
 app = FastAPI()
 
@@ -13,8 +15,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# プロジェクトルートの CSV を参照
-CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "merged_card_data.csv")
+# プロジェクトルートの CSV とリンクマッピングを参照
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CSV_PATH = os.path.join(BASE_DIR, "merged_card_data.csv")
+POKECA_LINKS_PATH = os.path.join(BASE_DIR, "pokeca_chart_links.json")
+
+
+def load_pokeca_links() -> dict:
+    """pokeca_chart_links.json を読み込み"""
+    if not os.path.exists(POKECA_LINKS_PATH):
+        return {}
+    try:
+        with open(POKECA_LINKS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
 
 
 def normalize_stock_status(stock_status):
@@ -64,24 +79,34 @@ def get_cards():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    pokeca_links = load_pokeca_links()
     processed_data = []
     for i, row in df.iterrows():
         profit = calculate_profit(row)
         stock_norm = normalize_stock_status(row.get("ラッシュ在庫状況"))
+        card_number = (row.get("card_number", "") or row.get("No", "") or "").strip()
+        card_name = (row.get("カード名") or "不明").strip()
+        composite_key = f"{card_number}|{card_name}" if card_number and card_name else None
+        pokeca_url = None
+        if composite_key and composite_key in pokeca_links:
+            pokeca_url = pokeca_links[composite_key]
+        elif card_number and card_number in pokeca_links:
+            pokeca_url = pokeca_links[card_number]
 
         buy_val = row.get("買取金額", 0)
         sell_val = row.get("ラッシュ販売価格", 0)
         item = {
             "id": f"{row.get('No', '')}_{row.get('card_number', '')}_{i}",
             "no": row.get("No"),
-            "card_name": row.get("カード名", "不明"),
-            "card_number": row.get("card_number", ""),
+            "card_name": card_name,
+            "card_number": card_number,
             "buy_price": float(buy_val) if pd.notna(buy_val) and buy_val != "" else 0,
             "sell_price": float(sell_val) if pd.notna(sell_val) and sell_val != "" else 0,
             "stock_original": row.get("ラッシュ在庫状況"),
             "stock_normalized": stock_norm,
             "image_url": row.get("画像URL") if pd.notna(row.get("画像URL")) and str(row.get("画像URL")).strip() and str(row.get("画像URL")) != "取得失敗" else None,
             "profit": profit,
+            "pokeca_chart_url": pokeca_url,
         }
         processed_data.append(item)
 

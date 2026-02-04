@@ -89,6 +89,16 @@ export default function CardList({ data, miscExpenses = 0 }) {
                 {card.stock_normalized}
               </div>
             </div>
+            {card.pokeca_chart_url && (
+              <a
+                href={card.pokeca_chart_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 mt-2 px-3 py-1.5 text-sm font-medium rounded border border-accent text-accent hover:bg-accent-light/30 transition-colors"
+              >
+                📊 みんなのポケカ相場で相場を見る
+              </a>
+            )}
           </div>
         </div>
       ))}
