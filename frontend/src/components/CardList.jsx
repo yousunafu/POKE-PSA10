@@ -14,9 +14,9 @@ function formatProfit(profit) {
   return <span className="text-text-main">{profit.toLocaleString()}円</span>;
 }
 
-function getDisplayProfit(card, miscExpenses = 0) {
-  const p = card.profit != null ? card.profit : 0;
-  return p - (Number(miscExpenses) || 0);
+function getDisplayNetProfit(card, miscExpenses = 0) {
+  if (!card.profitInfo) return 0;
+  return card.profitInfo.netProfit - (Number(miscExpenses) || 0);
 }
 
 export default function CardList({ data, miscExpenses = 0 }) {
@@ -70,19 +70,41 @@ export default function CardList({ data, miscExpenses = 0 }) {
               </div>
             )}
             <div className="mb-2">
-              <span className="text-text-muted mr-1">予想最大利益:</span>
-              {formatProfit(getDisplayProfit(card, miscExpenses))}
+              <span className="text-text-muted mr-1">手取り利益:</span>
+              {formatProfit(getDisplayNetProfit(card, miscExpenses))}
             </div>
             <div className="text-sm space-y-1">
               <div>
-                <span className="text-text-muted">買取価格（おたちゅう PSA10）:</span>{" "}
-                {Number(card.buy_price).toLocaleString()}円
+                <span className="text-text-muted">PSA10:</span>{" "}
+                {card.profitInfo.psa10Price.toLocaleString()}円
               </div>
               <div>
-                <span className="text-text-muted">販売価格（ラッシュ 素体A）:</span>{" "}
-                {card.sell_price != null && card.sell_price !== ""
-                  ? `${Number(card.sell_price).toLocaleString()}円`
-                  : "取得失敗"}
+                <span className="text-text-muted">仕入:</span>{" "}
+                {card.profitInfo.purchasePrice.toLocaleString()}円
+              </div>
+              <div>
+                <span className="text-text-muted">鑑定:</span>{" "}
+                {card.profitInfo.gradingFee.toLocaleString()}円
+                {card.profitInfo.isExpress ? "（快速1ヶ月）" : "（標準2〜3ヶ月）"}
+              </div>
+              <div>
+                <span className="text-text-muted">利益率:</span>{" "}
+                <span
+                  className={
+                    card.profitInfo.profitRate >= 20
+                      ? "font-medium text-profit-up"
+                      : card.profitInfo.profitRate >= 15
+                        ? "font-medium text-yellow-600"
+                        : ""
+                  }
+                >
+                  {card.profitInfo.profitRate.toFixed(1)}%
+                </span>
+                {card.profitInfo.monthlyRate != null && (
+                  <span className="text-text-muted ml-1">
+                    （月換算: 約{card.profitInfo.monthlyRate.toFixed(1)}%）
+                  </span>
+                )}
               </div>
               <div>
                 <span className="text-text-muted">在庫:</span>{" "}

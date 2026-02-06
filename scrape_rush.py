@@ -227,25 +227,41 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "",
         if target_name:
             print(f"  ターゲットカード名: {target_name} (正規化後: {_normalize_card_name(target_name)})")
         
-        # タイムアウトを長めに設定し、エラーが発生しても処理を続行
+        # domcontentloaded で待機（networkidle は Cloudflare 等でタイムアウトしやすい）
         try:
-            page.goto(search_url, wait_until="networkidle", timeout=30000)
+            page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
         except PlaywrightTimeoutError:
             print(f"  タイムアウトが発生しましたが、ページの読み込みを続行します...")
-            # タイムアウトしてもページは部分的に読み込まれている可能性がある
-            time.sleep(2)  # 少し待機してから続行
+            time.sleep(2)
         
-        # ページが読み込まれるまで少し待機
-        time.sleep(1)
+        # Cloudflare チャレンジ通過を待つ: 商品リンクが表示されるまで最大20秒待機
+        try:
+            page.wait_for_selector("a[href*='/product/']", timeout=20000)
+        except PlaywrightTimeoutError:
+            pass  # 見つからなくても続行（後で product_links が 0 ならリトライ）
+        
+        time.sleep(2)  # 追加の描画待ち
         
         # 検索結果の商品リストを取得
         product_items = []  # 在庫ありの商品
         out_of_stock_items = []  # 在庫なしの商品（価格と画像を取得するため）
         normalized_target_name = _normalize_card_name(target_name)
         
-        # 商品リンクを取得（より具体的なセレクターを使用）
-        # 検索結果ページでは、商品情報が含まれるリンクを探す
+        # 商品リンクを取得
         product_links = page.query_selector_all("a[href*='/product/']")
+        
+        # Cloudflare チャレンジページの場合は待機してリトライ（2件目以降でブロックされやすい）
+        _is_cloudflare = "Just a moment" in page.content() or "Verify you are human" in page.content()
+        if len(product_links) == 0 and _is_cloudflare:
+            print(f"  Cloudflareチャレンジ検出。15秒待機してリトライ...")
+            time.sleep(15)
+            try:
+                page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+                time.sleep(5)
+                page.wait_for_selector("a[href*='/product/']", timeout=25000)
+            except PlaywrightTimeoutError:
+                pass
+            product_links = page.query_selector_all("a[href*='/product/']")
         
         # 重複を避けるためにURLを記録
         seen_urls = set()
@@ -560,7 +576,7 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "",
         }
 
 
-def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = False, filter_card_number: str = None, filter_card_numbers: list = None, last_n: int = None):
+def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = False, filter_card_number: str = None, filter_card_numbers: list = None, last_n: int = None, first_n: int = None):
     """
     カードラッシュのデータをスクレイピングして統合
     
@@ -594,8 +610,13 @@ def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = Fal
             print(f"エラー: カード番号 '{filter_card_number}' が見つかりませんでした")
             return
     
+    # 先頭N件のみ処理
+    if first_n is not None and first_n > 0:
+        original_count = len(data)
+        data = data[:first_n]
+        print(f"先頭{first_n}件のみ処理: {original_count}件 -> {len(data)}件")
     # 最後N件のみ処理
-    if last_n is not None and last_n > 0:
+    elif last_n is not None and last_n > 0:
         original_count = len(data)
         data = data[-last_n:]  # 最後N件を取得
         print(f"最後{last_n}件のみ処理: {original_count}件 -> {len(data)}件")
@@ -609,26 +630,33 @@ def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = Fal
     results = []
     
     with sync_playwright() as p:
-        # ブラウザを起動
+        # ブラウザを起動（Chrome優先: Cloudflare検出されにくい。GitHub Actions等ではChromiumへフォールバック）
         browser = None
         try:
             browser = p.chromium.launch(
+                channel="chrome",
                 headless=True,
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
             )
-        except Exception as e:
-            print(f"Chromiumの起動に失敗しました: {e}")
-            print("Firefoxを使用して再試行します...")
+            print("Chrome で起動しました")
+        except Exception:
             try:
-                browser = p.firefox.launch(headless=True)
-            except Exception as e2:
-                print(f"Firefoxの起動にも失敗しました: {e2}")
-                raise
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+                )
+                print("Chromium で起動しました")
+            except Exception as e:
+                print(f"Chromiumの起動に失敗しました: {e}")
+                print("Firefoxを使用して再試行します...")
+                try:
+                    browser = p.firefox.launch(headless=True)
+                except Exception as e2:
+                    print(f"Firefoxの起動にも失敗しました: {e2}")
+                    raise
         
-        context = browser.new_context(
-            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        )
-        page = context.new_page()
+        # リクエスト間の待機時間（秒）
+        wait_between_requests = 5
         
         for idx, row in enumerate(data, 1):
             print(f"\n[{idx}/{len(data)}] 処理中...")
@@ -648,15 +676,23 @@ def scrape_cardrush_data(input_csv: str, output_csv: str, debug_mode: bool = Fal
                 results.append(row)
                 continue
             
-            # カードラッシュで検索（元のカード名・レア・型番も渡す。型番一致時は双方向名前マッチでパターン2対応）
-            target_name = row.get('カード名', '').strip()
-            rarity = row.get('レア', '').strip()
-            card_number_val = row.get('card_number', '').strip()
-            rush_data = search_cardrush(page, keyword, target_name=target_name, rarity=rarity, card_number=card_number_val)
+            # Cloudflare対策: 毎回新しいコンテキストで初回アクセスとして扱う
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            page = context.new_page()
             
-            # リクエスト間に待機時間を入れる
-            wait_time = 2.5  # 2.5秒待機
-            time.sleep(wait_time)
+            try:
+                target_name = row.get('カード名', '').strip()
+                rarity = row.get('レア', '').strip()
+                card_number_val = row.get('card_number', '').strip()
+                rush_data = search_cardrush(page, keyword, target_name=target_name, rarity=rarity, card_number=card_number_val)
+            finally:
+                context.close()
+            
+            # リクエスト間に待機
+            if idx < len(data):
+                time.sleep(wait_between_requests)
             
             if rush_data:
                 # データを統合
@@ -787,6 +823,17 @@ def main():
                 print("エラー: --tail の後には数値を指定してください")
                 return
     
+    # 先頭N件のみ処理（--head 10）
+    first_n = None
+    if '--head' in sys.argv:
+        head_index = sys.argv.index('--head')
+        if head_index + 1 < len(sys.argv):
+            try:
+                first_n = int(sys.argv[head_index + 1])
+            except ValueError:
+                print("エラー: --head の後には数値を指定してください")
+                return
+    
     if debug_mode:
         print("=" * 50)
         print("デバッグモード: 先頭5件のみ処理します")
@@ -805,8 +852,12 @@ def main():
         print("=" * 50)
         print(f"最後{last_n}件のみ処理します")
         print("=" * 50)
+    if first_n:
+        print("=" * 50)
+        print(f"先頭{first_n}件のみ処理します")
+        print("=" * 50)
     
-    scrape_cardrush_data(input_csv, output_csv, debug_mode=debug_mode, filter_card_number=filter_card_number, filter_card_numbers=filter_card_numbers, last_n=last_n)
+    scrape_cardrush_data(input_csv, output_csv, debug_mode=debug_mode, filter_card_number=filter_card_number, filter_card_numbers=filter_card_numbers, last_n=last_n, first_n=first_n)
     
     print("\n処理が完了しました")
 

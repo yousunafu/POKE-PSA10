@@ -16,9 +16,9 @@ function formatProfitCell(profit) {
   return <span>{profit.toLocaleString()}円</span>;
 }
 
-function getDisplayProfit(card, miscExpenses = 0) {
-  const p = card.profit != null ? card.profit : 0;
-  return p - (Number(miscExpenses) || 0);
+function getDisplayNetProfit(card, miscExpenses = 0) {
+  if (!card.profitInfo) return 0;
+  return card.profitInfo.netProfit - (Number(miscExpenses) || 0);
 }
 
 export default function TableView({ data, miscExpenses = 0 }) {
@@ -28,8 +28,20 @@ export default function TableView({ data, miscExpenses = 0 }) {
   const sortedData = useMemo(() => {
     const arr = [...(data || [])];
     arr.sort((a, b) => {
-      let va = sortKey === "profit" ? getDisplayProfit(a, miscExpenses) : a[sortKey];
-      let vb = sortKey === "profit" ? getDisplayProfit(b, miscExpenses) : b[sortKey];
+      let va, vb;
+      if (sortKey === "profit") {
+        va = getDisplayNetProfit(a, miscExpenses);
+        vb = getDisplayNetProfit(b, miscExpenses);
+      } else if (sortKey === "profitRate") {
+        va = a.profitInfo?.profitRate ?? 0;
+        vb = b.profitInfo?.profitRate ?? 0;
+      } else if (sortKey === "gradingFee") {
+        va = a.profitInfo?.gradingFee ?? 0;
+        vb = b.profitInfo?.gradingFee ?? 0;
+      } else {
+        va = a[sortKey];
+        vb = b[sortKey];
+      }
       if (typeof va === "string") va = (va || "").toLowerCase();
       if (typeof vb === "string") vb = (vb || "").toLowerCase();
       if (va < vb) return sortAsc ? 1 : -1;
@@ -43,7 +55,7 @@ export default function TableView({ data, miscExpenses = 0 }) {
     if (sortKey === key) setSortAsc((s) => !s);
     else {
       setSortKey(key);
-      setSortAsc(key === "profit"); // 利益はデフォルト降順（高い順）、他は昇順
+      setSortAsc(key === "profit" || key === "profitRate");
     }
   };
 
@@ -64,7 +76,7 @@ export default function TableView({ data, miscExpenses = 0 }) {
     );
   }
 
-  const displayProfits = sortedData.map((c) => getDisplayProfit(c, miscExpenses));
+  const displayProfits = sortedData.map((c) => getDisplayNetProfit(c, miscExpenses));
   const avgProfit = displayProfits.length
     ? displayProfits.reduce((acc, p) => acc + p, 0) / displayProfits.length
     : 0;
@@ -81,10 +93,12 @@ export default function TableView({ data, miscExpenses = 0 }) {
               <Th label="カード名" colKey="card_name" />
               <Th label="型番" colKey="card_number" />
               <Th label="相場" colKey="pokeca_chart_url" className="whitespace-nowrap min-w-[5rem]" />
-              <Th label="買取価格（おたちゅう）" colKey="buy_price" />
-              <Th label="販売価格（ラッシュ）" colKey="sell_price" />
-              <Th label="予想最大利益" colKey="profit" />
-              <Th label="在庫状況" colKey="stock_normalized" />
+              <Th label="PSA10" colKey="buy_price" />
+              <Th label="仕入" colKey="sell_price" />
+              <Th label="鑑定" colKey="gradingFee" className="whitespace-nowrap" />
+              <Th label="手取" colKey="profit" />
+              <Th label="利益率" colKey="profitRate" />
+              <Th label="在庫" colKey="stock_normalized" />
             </tr>
           </thead>
           <tbody>
@@ -125,15 +139,29 @@ export default function TableView({ data, miscExpenses = 0 }) {
                   )}
                 </td>
                 <td className="border border-border-custom px-3 py-2">
-                  {Number(card.buy_price).toLocaleString()}円
+                  {card.profitInfo.psa10Price.toLocaleString()}円
                 </td>
                 <td className="border border-border-custom px-3 py-2">
-                  {card.sell_price != null && card.sell_price !== ""
-                    ? `${Number(card.sell_price).toLocaleString()}円`
-                    : "—"}
+                  {card.profitInfo.purchasePrice.toLocaleString()}円
+                </td>
+                <td className="border border-border-custom px-3 py-2 text-text-muted">
+                  {card.profitInfo.gradingFee.toLocaleString()}円
                 </td>
                 <td className="border border-border-custom px-3 py-2">
-                  {formatProfitCell(getDisplayProfit(card, miscExpenses))}
+                  {formatProfitCell(getDisplayNetProfit(card, miscExpenses))}
+                </td>
+                <td className="border border-border-custom px-3 py-2">
+                  <span
+                    className={
+                      card.profitInfo.profitRate >= 20
+                        ? "text-profit-up font-medium"
+                        : card.profitInfo.profitRate >= 15
+                          ? "text-yellow-600 font-medium"
+                          : ""
+                    }
+                  >
+                    {card.profitInfo.profitRate.toFixed(1)}%
+                  </span>
                 </td>
                 <td className="border border-border-custom px-3 py-2 text-text-muted">
                   {card.stock_normalized}
@@ -144,7 +172,7 @@ export default function TableView({ data, miscExpenses = 0 }) {
         </table>
       </div>
       <div className="bg-bg-card border border-border-custom rounded-lg px-4 py-3 text-sm text-text-main">
-        💡 予想最大利益の 平均: {Math.floor(avgProfit).toLocaleString()}円 |
+        💡 手取り利益の 平均: {Math.floor(avgProfit).toLocaleString()}円 |
         最大: {maxProfit.toLocaleString()}円 | 最小: {minProfit.toLocaleString()}円
       </div>
     </div>

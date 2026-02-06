@@ -4,6 +4,7 @@ export default function Filters({ filters, setFilters, stats }) {
     let next = value;
     if (type === "checkbox") next = checked;
     else if (type === "number") next = value === "" ? null : Number(value);
+    else if (name === "profitRateMin") next = value === "" ? 0 : Number(value);
     if (name === "miscExpenses" && (next === null || next === undefined))
       next = 0;
     setFilters((prev) => ({ ...prev, [name]: next }));
@@ -40,16 +41,27 @@ export default function Filters({ filters, setFilters, stats }) {
               />
               在庫ありのみ表示
             </label>
-            <label className="flex items-center gap-2 text-sm text-text-main cursor-pointer">
-              <input
-                type="checkbox"
-                name="profitOnly"
-                checked={filters.profitOnly}
-                onChange={handleChange}
-                className="rounded text-accent focus:ring-accent"
-              />
-              利益が出る商品のみ表示（諸費用控除後）
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-main mb-1">
+              利益率（%以上）
             </label>
+            <select
+              name="profitRateMin"
+              value={filters.profitRateMin ?? 20}
+              onChange={handleChange}
+              className="w-full border border-border-custom rounded px-3 py-2 text-sm focus:outline-none focus:border-accent"
+            >
+              <option value={0}>全て</option>
+              <option value={10}>10%以上</option>
+              <option value={15}>15%以上</option>
+              <option value={20}>20%以上（推奨）</option>
+              <option value={25}>25%以上</option>
+              <option value={30}>30%以上</option>
+            </select>
+            <p className="text-xs text-text-muted mt-1">
+              仕入れ候補の目安は20%以上
+            </p>
           </div>
         </div>
       </div>
@@ -91,7 +103,7 @@ export default function Filters({ filters, setFilters, stats }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-text-main mb-1">
-              諸費用（円）
+              その他諸費用（円）
             </label>
             <input
               type="number"
@@ -100,10 +112,12 @@ export default function Filters({ filters, setFilters, stats }) {
               step={500}
               value={filters.miscExpenses ?? 0}
               onChange={handleChange}
-              placeholder="鑑定費用など"
+              placeholder="送料など"
               className="w-full border border-border-custom rounded px-3 py-2 text-sm focus:outline-none focus:border-accent"
             />
-            <p className="text-xs text-text-muted mt-1">予想利益から自動で控除します</p>
+            <p className="text-xs text-text-muted mt-1">
+              鑑定費は利益に応じて自動計算（3,000円/10,000円）
+            </p>
           </div>
         </div>
       </div>
@@ -117,6 +131,12 @@ export default function Filters({ filters, setFilters, stats }) {
             <span className="text-text-muted">全データ:</span>
             <span className="font-bold">{stats.total.toLocaleString()}</span>
           </div>
+          {stats.hiddenByProfit > 0 && (
+            <div className="flex justify-between">
+              <span className="text-text-muted">利益1万以下で非表示:</span>
+              <span className="font-bold">{stats.hiddenByProfit.toLocaleString()}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-text-muted">表示中:</span>
             <span className="font-bold">{stats.filtered.toLocaleString()}</span>
