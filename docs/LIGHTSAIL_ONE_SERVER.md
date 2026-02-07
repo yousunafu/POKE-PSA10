@@ -199,11 +199,11 @@ crontab -e
 次の 2 行を追加（1行目が 10:00 JST、2行目が 18:00 JST）:
 
 ```cron
-0 1 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python scrape_otachu.py && /home/ubuntu/app/venv/bin/python scrape_rush.py
-0 9 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python scrape_otachu.py && /home/ubuntu/app/venv/bin/python scrape_rush.py
+0 1 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python scrape_otachu.py && /home/ubuntu/app/venv/bin/python scrape_rush.py && /home/ubuntu/app/venv/bin/python generate_filtered_csv.py
+0 9 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python scrape_otachu.py && /home/ubuntu/app/venv/bin/python scrape_rush.py && /home/ubuntu/app/venv/bin/python generate_filtered_csv.py
 ```
 
-- 実行後、`merged_card_data.csv` が同じディレクトリで更新され、API が次回リクエストからその内容を返します
+- 実行後、`merged_card_data.csv` と `filtered_cards.csv` が同じディレクトリで更新されます。`filtered_cards.csv` は利益率20%以上の仕入れ候補（鑑定費・手取り利益・利益率・月換算利益率を含む）です。API は `merged_card_data.csv` を参照します
 - ログを残したい場合の例:
   ```cron
   0 1 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python scrape_otachu.py && /home/ubuntu/app/venv/bin/python scrape_rush.py >> /home/ubuntu/app/scrape.log 2>&1
@@ -224,7 +224,8 @@ cd /home/ubuntu/app
 source venv/bin/activate
 python scrape_otachu.py
 python scrape_rush.py
-# merged_card_data.csv が更新されていることを確認
+python generate_filtered_csv.py
+# merged_card_data.csv と filtered_cards.csv が更新されていることを確認
 ```
 
 ---
@@ -251,7 +252,7 @@ sudo certbot --nginx -d example.com
 | API のログ確認 | `journalctl -u poke-psa-api -f` |
 | フロントの更新 | `cd $APP_DIR/frontend && git pull && npm ci && npm run build`（Nginx は再起動不要） |
 | バックエンドの更新 | `cd $APP_DIR && git pull && sudo systemctl restart poke-psa-api` |
-| スクレイプの手動実行 | `cd $APP_DIR && source venv/bin/activate && python scrape_otachu.py && python scrape_rush.py` |
+| スクレイプの手動実行 | `cd $APP_DIR && source venv/bin/activate && python scrape_otachu.py && python scrape_rush.py && python generate_filtered_csv.py` |
 | cron のログ | 上記のように `>> scrape.log` を入れていれば `tail -f /home/ubuntu/app/scrape.log` |
 
 ---
@@ -278,7 +279,7 @@ cd frontend && npm ci && npm run build && cd ..
 sudo systemctl restart poke-psa-api
 ```
 
-- **スクレイプのコードだけ変えた場合**: `git pull` だけでよい。API 再起動は不要（API は CSV を読むだけ）。次回の cron（10時・18時）で新しいスクリプトが使われる。すぐ反映させたい場合は「スクレイプの手動実行」を 1 回回す。
+- **スクレイプのコードだけ変えた場合**: `git pull` だけでよい。API 再起動は不要（API は CSV を読むだけ）。次回の cron（10時・18時）で新しいスクリプトが使われる。`generate_filtered_csv.py` も同様に cron 実行後に `filtered_cards.csv` が生成される。すぐ反映させたい場合は「スクレイプの手動実行」を 1 回回す。
 - **フロントだけ変えた場合**: `git pull` と `frontend` の `npm run build` だけでよい（API 再起動は不要）。
 - **バックエンド（API）のコードを変えた場合**: `git pull` と `sudo systemctl restart poke-psa-api`。
 - **データ（CSV）だけ更新したい場合**: 上記の「スクレイプの手動実行」で `scrape_otachu.py` → `scrape_rush.py` を回すか、ローカルで作った `merged_card_data.csv` を `scp` でアップロードする。

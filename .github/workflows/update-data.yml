@@ -37,9 +37,12 @@ jobs:
       - name: Run scrape_rush (販売価格・在庫 → merged_card_data.csv)
         run: python scrape_rush.py
 
+      - name: Generate filtered_cards.csv (利益率20%以上の仕入れ候補)
+        run: python generate_filtered_csv.py
+
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add merged_card_data.csv otachu_psa10.csv
-          git diff --staged --quiet || (git commit -m "chore: update merged_card_data.csv and otachu_psa10.csv [scheduled]" && git push)
+          git add merged_card_data.csv otachu_psa10.csv filtered_cards.csv
+          git diff --staged --quiet || (git commit -m "chore: update merged_card_data.csv otachu_psa10.csv filtered_cards.csv [scheduled]" && git push)

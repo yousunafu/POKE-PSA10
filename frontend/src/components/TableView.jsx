@@ -21,7 +21,7 @@ function getDisplayNetProfit(card, miscExpenses = 0) {
   return card.profitInfo.netProfit - (Number(miscExpenses) || 0);
 }
 
-export default function TableView({ data, miscExpenses = 0 }) {
+export default function TableView({ data, miscExpenses = 0, psa9Stats = {}, showPsa9Stats = false }) {
   const [sortKey, setSortKey] = useState("profit");
   const [sortAsc, setSortAsc] = useState(true); // true = 降順（利益高い順がデフォルト）
 
@@ -38,6 +38,12 @@ export default function TableView({ data, miscExpenses = 0 }) {
       } else if (sortKey === "gradingFee") {
         va = a.profitInfo?.gradingFee ?? 0;
         vb = b.profitInfo?.gradingFee ?? 0;
+      } else if (sortKey === "yahooAvg") {
+        va = psa9Stats[a.id]?.yahooAvg ?? -1;
+        vb = psa9Stats[b.id]?.yahooAvg ?? -1;
+      } else if (sortKey === "mercariUrl") {
+        va = psa9Stats[a.id]?.mercariUrl ? 1 : 0;
+        vb = psa9Stats[b.id]?.mercariUrl ? 1 : 0;
       } else {
         va = a[sortKey];
         vb = b[sortKey];
@@ -49,7 +55,7 @@ export default function TableView({ data, miscExpenses = 0 }) {
       return 0;
     });
     return arr;
-  }, [data, sortKey, sortAsc, miscExpenses]);
+  }, [data, sortKey, sortAsc, miscExpenses, psa9Stats]);
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortAsc((s) => !s);
@@ -92,13 +98,19 @@ export default function TableView({ data, miscExpenses = 0 }) {
               <Th label="画像" colKey="card_name" />
               <Th label="カード名" colKey="card_name" />
               <Th label="型番" colKey="card_number" />
-              <Th label="相場" colKey="pokeca_chart_url" className="whitespace-nowrap min-w-[5rem]" />
               <Th label="PSA10" colKey="buy_price" />
               <Th label="仕入" colKey="sell_price" />
               <Th label="鑑定" colKey="gradingFee" className="whitespace-nowrap" />
               <Th label="手取" colKey="profit" />
               <Th label="利益率" colKey="profitRate" />
               <Th label="在庫" colKey="stock_normalized" />
+              <Th label="相場" colKey="pokeca_chart_url" className="whitespace-nowrap min-w-[5rem]" />
+              {showPsa9Stats && (
+                <>
+                  <Th label={<>ヤフオク<br />（PSA9）</>} colKey="yahooAvg" className="whitespace-nowrap" />
+                  <Th label={<>メルカリ<br />（PSA9）</>} colKey="mercariUrl" className="whitespace-nowrap min-w-[4rem]" />
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -123,20 +135,6 @@ export default function TableView({ data, miscExpenses = 0 }) {
                 </td>
                 <td className="border border-border-custom px-3 py-2 text-text-muted">
                   {card.card_number || "—"}
-                </td>
-                <td className="border border-border-custom px-3 py-2 whitespace-nowrap">
-                  {card.pokeca_chart_url ? (
-                    <a
-                      href={card.pokeca_chart_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-accent hover:underline text-xs whitespace-nowrap"
-                    >
-                      📊 相場
-                    </a>
-                  ) : (
-                    <span className="text-text-muted text-xs">—</span>
-                  )}
                 </td>
                 <td className="border border-border-custom px-3 py-2">
                   {card.profitInfo.psa10Price.toLocaleString()}円
@@ -166,6 +164,71 @@ export default function TableView({ data, miscExpenses = 0 }) {
                 <td className="border border-border-custom px-3 py-2 text-text-muted">
                   {card.stock_normalized}
                 </td>
+                <td className="border border-border-custom px-3 py-2 whitespace-nowrap">
+                  {card.pokeca_chart_url ? (
+                    <a
+                      href={card.pokeca_chart_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent hover:underline text-xs whitespace-nowrap"
+                    >
+                      📊 相場
+                    </a>
+                  ) : (
+                    <span className="text-text-muted text-xs">—</span>
+                  )}
+                </td>
+                {showPsa9Stats && (
+                  <>
+                    <td className="border border-border-custom px-3 py-2 text-sm">
+                      {(function () {
+                        const s = psa9Stats[card.id];
+                        if (!s) return <span className="text-text-muted text-xs">—</span>;
+                        if (s.error) return <span className="text-profit-down text-xs">エラー</span>;
+                        const recents = [s.recent1, s.recent2, s.recent3].filter(Boolean);
+                        return (
+                          <div className="space-y-1">
+                            {s.yahooAvg != null && (
+                              <div>平均 {s.yahooAvg.toLocaleString()}円</div>
+                            )}
+                            {recents.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {recents.map((r, i) => (
+                                  <a
+                                    key={i}
+                                    href={r.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-accent hover:underline text-xs"
+                                  >
+                                    {r.price.toLocaleString()}円
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                            {!s.yahooAvg && recents.length === 0 && (
+                              <span className="text-text-muted text-xs">—</span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="border border-border-custom px-3 py-2 whitespace-nowrap">
+                      {psa9Stats[card.id]?.mercariUrl ? (
+                        <a
+                          href={psa9Stats[card.id].mercariUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent hover:underline text-xs"
+                        >
+                          メルカリ
+                        </a>
+                      ) : (
+                        <span className="text-text-muted text-xs">—</span>
+                      )}
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>

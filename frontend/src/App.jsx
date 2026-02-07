@@ -13,6 +13,7 @@ const MOBILE_LOAD_MORE = 20;
 const INITIAL_FILTERS = {
   keyword: "",
   inStockOnly: false,
+  showPsa9Stats: false,
   profitRateMin: 20,
   priceMin: null,
   priceMax: null,
@@ -51,6 +52,7 @@ function App() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [psa9Stats, setPsa9Stats] = useState({});
 
   useEffect(() => {
     setLoading(true);
@@ -63,6 +65,12 @@ function App() {
       .then((data) => {
         if (!Array.isArray(data)) throw new Error("データ形式が不正です");
         setCards(data);
+        // 定期バッチで取得済みの PSA9 相場を初期表示
+        const cached = {};
+        data.forEach((c) => {
+          if (c.psa9Stats) cached[c.id] = c.psa9Stats;
+        });
+        setPsa9Stats(cached);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -278,7 +286,7 @@ function App() {
                 <p className="text-text-muted text-sm mb-4">
                   PCで見やすいテーブル形式。各列クリックでソート可能。
                 </p>
-                <TableView data={filteredData} miscExpenses={miscExpenses} />
+                <TableView data={filteredData} miscExpenses={miscExpenses} psa9Stats={psa9Stats} showPsa9Stats={filters.showPsa9Stats} />
               </section>
 
               <section className="bg-bg-card border border-border-custom rounded-lg p-4 shadow-sm">
@@ -315,7 +323,7 @@ function App() {
                 {currentData.length}件表示（{filteredData.length}件中）
               </p>
             )}
-            <CardList data={currentData} miscExpenses={miscExpenses} />
+            <CardList data={currentData} miscExpenses={miscExpenses} psa9Stats={psa9Stats} showPsa9Stats={filters.showPsa9Stats} />
             {isMobile && hasMoreMobile && (
               <div ref={loadMoreSentinelRef} className="h-4" aria-hidden="true" />
             )}

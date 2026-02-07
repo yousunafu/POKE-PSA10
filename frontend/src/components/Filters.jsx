@@ -41,6 +41,16 @@ export default function Filters({ filters, setFilters, stats }) {
               />
               在庫ありのみ表示
             </label>
+            <label className="flex items-center gap-2 text-sm text-text-main cursor-pointer">
+              <input
+                type="checkbox"
+                name="showPsa9Stats"
+                checked={filters.showPsa9Stats ?? false}
+                onChange={handleChange}
+                className="rounded text-accent focus:ring-accent"
+              />
+              PSA9の相場を表示
+            </label>
           </div>
           <div>
             <label className="block text-sm font-medium text-text-main mb-1">
