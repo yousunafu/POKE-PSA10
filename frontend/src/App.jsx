@@ -14,6 +14,7 @@ const INITIAL_FILTERS = {
   keyword: "",
   inStockOnly: false,
   showPsa9Stats: false,
+  showGradingFee: false,
   profitRateMin: 20,
   priceMin: null,
   priceMax: null,
@@ -286,7 +287,7 @@ function App() {
                 <p className="text-text-muted text-sm mb-4">
                   PCで見やすいテーブル形式。各列クリックでソート可能。
                 </p>
-                <TableView data={filteredData} miscExpenses={miscExpenses} psa9Stats={psa9Stats} showPsa9Stats={filters.showPsa9Stats} />
+                <TableView data={filteredData} miscExpenses={miscExpenses} psa9Stats={psa9Stats} showPsa9Stats={filters.showPsa9Stats} showGradingFee={filters.showGradingFee} />
               </section>
 
               <section className="bg-bg-card border border-border-custom rounded-lg p-4 shadow-sm">
@@ -323,7 +324,7 @@ function App() {
                 {currentData.length}件表示（{filteredData.length}件中）
               </p>
             )}
-            <CardList data={currentData} miscExpenses={miscExpenses} psa9Stats={psa9Stats} showPsa9Stats={filters.showPsa9Stats} />
+            <CardList data={currentData} miscExpenses={miscExpenses} psa9Stats={psa9Stats} showPsa9Stats={filters.showPsa9Stats} showGradingFee={filters.showGradingFee} />
             {isMobile && hasMoreMobile && (
               <div ref={loadMoreSentinelRef} className="h-4" aria-hidden="true" />
             )}

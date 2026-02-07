@@ -19,7 +19,7 @@ function getDisplayNetProfit(card, miscExpenses = 0) {
   return card.profitInfo.netProfit - (Number(miscExpenses) || 0);
 }
 
-export default function CardList({ data, miscExpenses = 0, psa9Stats = {}, showPsa9Stats = false }) {
+export default function CardList({ data, miscExpenses = 0, psa9Stats = {}, showPsa9Stats = false, showGradingFee = false }) {
   const [failedImages, setFailedImages] = useState(new Set());
 
   if (!data || data.length === 0) {
@@ -72,6 +72,11 @@ export default function CardList({ data, miscExpenses = 0, psa9Stats = {}, showP
             <div className="mb-2">
               <span className="text-text-muted mr-1">手取り利益:</span>
               {formatProfit(getDisplayNetProfit(card, miscExpenses))}
+              {card.profitInfo?.riskReward != null && (
+                <div className="text-xs text-profit-down mt-0.5">
+                  リスク: {card.profitInfo.riskReward.toLocaleString()}円
+                </div>
+              )}
             </div>
             <div className="text-sm space-y-1">
               <div>
@@ -82,11 +87,13 @@ export default function CardList({ data, miscExpenses = 0, psa9Stats = {}, showP
                 <span className="text-text-muted">仕入:</span>{" "}
                 {card.profitInfo.purchasePrice.toLocaleString()}円
               </div>
-              <div>
-                <span className="text-text-muted">鑑定:</span>{" "}
-                {card.profitInfo.gradingFee.toLocaleString()}円
-                {card.profitInfo.isExpress ? "（快速1ヶ月）" : "（標準2〜3ヶ月）"}
-              </div>
+              {showGradingFee && (
+                <div>
+                  <span className="text-text-muted">鑑定:</span>{" "}
+                  {card.profitInfo.gradingFee.toLocaleString()}円
+                  {card.profitInfo.isExpress ? "（快速1ヶ月）" : "（標準2〜3ヶ月）"}
+                </div>
+              )}
               <div>
                 <span className="text-text-muted">利益率:</span>{" "}
                 <span

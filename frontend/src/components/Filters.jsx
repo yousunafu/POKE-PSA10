@@ -51,6 +51,16 @@ export default function Filters({ filters, setFilters, stats }) {
               />
               PSA9の相場を表示
             </label>
+            <label className="flex items-center gap-2 text-sm text-text-main cursor-pointer">
+              <input
+                type="checkbox"
+                name="showGradingFee"
+                checked={filters.showGradingFee ?? false}
+                onChange={handleChange}
+                className="rounded text-accent focus:ring-accent"
+              />
+              鑑定額を表示する
+            </label>
           </div>
           <div>
             <label className="block text-sm font-medium text-text-main mb-1">

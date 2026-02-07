@@ -56,6 +56,19 @@ export function getMonthlyProfitRate(profitRate) {
 }
 
 /**
+ * リスクリワード（鑑定失敗時の想定損失）
+ * = 鑑定料 + 販売価格の10%（素体で売る時の販売サイト手数料想定）
+ * @param {number} gradingFee - 鑑定費
+ * @param {number} purchasePrice - 仕入れ値（販売価格）
+ * @returns {number} リスクリワード
+ */
+export function getRiskReward(gradingFee, purchasePrice) {
+  const fee = Number(gradingFee) || 0;
+  const price = Number(purchasePrice) || 0;
+  return Math.round(fee + price * 0.1);
+}
+
+/**
  * 1枚のカードに対する鑑定・利益の算出結果
  */
 export function calcCardProfit(card) {
@@ -71,6 +84,7 @@ export function calcCardProfit(card) {
   const monthlyRate = gradingFee === GRADE_FEE_STANDARD
     ? getMonthlyProfitRate(profitRate)
     : null;
+  const riskReward = getRiskReward(gradingFee, sellPrice);
 
   return {
     psa10Price: buyPrice,
@@ -80,6 +94,7 @@ export function calcCardProfit(card) {
     netProfit,
     profitRate,
     monthlyRate,
+    riskReward,
     isExpress: gradingFee === GRADE_FEE_EXPRESS,
   };
 }

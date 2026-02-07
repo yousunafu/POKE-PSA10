@@ -21,7 +21,7 @@ function getDisplayNetProfit(card, miscExpenses = 0) {
   return card.profitInfo.netProfit - (Number(miscExpenses) || 0);
 }
 
-export default function TableView({ data, miscExpenses = 0, psa9Stats = {}, showPsa9Stats = false }) {
+export default function TableView({ data, miscExpenses = 0, psa9Stats = {}, showPsa9Stats = false, showGradingFee = false }) {
   const [sortKey, setSortKey] = useState("profit");
   const [sortAsc, setSortAsc] = useState(true); // true = 降順（利益高い順がデフォルト）
 
@@ -100,8 +100,8 @@ export default function TableView({ data, miscExpenses = 0, psa9Stats = {}, show
               <Th label="型番" colKey="card_number" />
               <Th label="PSA10" colKey="buy_price" />
               <Th label="仕入" colKey="sell_price" />
-              <Th label="鑑定" colKey="gradingFee" className="whitespace-nowrap" />
-              <Th label="手取" colKey="profit" />
+              {showGradingFee && <Th label="鑑定" colKey="gradingFee" className="whitespace-nowrap" />}
+              <Th label="最大利益" colKey="profit" />
               <Th label="利益率" colKey="profitRate" />
               <Th label="在庫" colKey="stock_normalized" />
               <Th label="相場" colKey="pokeca_chart_url" className="whitespace-nowrap min-w-[5rem]" />
@@ -142,11 +142,20 @@ export default function TableView({ data, miscExpenses = 0, psa9Stats = {}, show
                 <td className="border border-border-custom px-3 py-2">
                   {card.profitInfo.purchasePrice.toLocaleString()}円
                 </td>
-                <td className="border border-border-custom px-3 py-2 text-text-muted">
-                  {card.profitInfo.gradingFee.toLocaleString()}円
-                </td>
+                {showGradingFee && (
+                  <td className="border border-border-custom px-3 py-2 text-text-muted">
+                    {card.profitInfo.gradingFee.toLocaleString()}円
+                  </td>
+                )}
                 <td className="border border-border-custom px-3 py-2">
-                  {formatProfitCell(getDisplayNetProfit(card, miscExpenses))}
+                  <div>
+                    {formatProfitCell(getDisplayNetProfit(card, miscExpenses))}
+                    {card.profitInfo?.riskReward != null && (
+                      <div className="text-xs text-profit-down mt-0.5">
+                        リスク: {card.profitInfo.riskReward.toLocaleString()}円
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td className="border border-border-custom px-3 py-2">
                   <span
