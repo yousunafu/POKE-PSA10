@@ -44,6 +44,9 @@ export default function TableView({ data, miscExpenses = 0, psa9Stats = {}, show
       } else if (sortKey === "mercariUrl") {
         va = psa9Stats[a.id]?.mercariUrl ? 1 : 0;
         vb = psa9Stats[b.id]?.mercariUrl ? 1 : 0;
+      } else if (sortKey === "snkrdunkUrl") {
+        va = (a.card_number || "").toLowerCase();
+        vb = (b.card_number || "").toLowerCase();
       } else {
         va = a[sortKey];
         vb = b[sortKey];
@@ -107,8 +110,8 @@ export default function TableView({ data, miscExpenses = 0, psa9Stats = {}, show
               <Th label="相場" colKey="pokeca_chart_url" className="whitespace-nowrap min-w-[5rem]" />
               {showPsa9Stats && (
                 <>
+                  <Th label={<><span className="block">eBay(PSA9)</span><span className="block">メルカリ</span><span className="block">スニダン</span></>} colKey="psa9_links" className="whitespace-nowrap min-w-[4rem]" />
                   <Th label={<>ヤフオク<br />（PSA9）</>} colKey="yahooAvg" className="whitespace-nowrap" />
-                  <Th label={<>メルカリ<br />（PSA9）</>} colKey="mercariUrl" className="whitespace-nowrap min-w-[4rem]" />
                 </>
               )}
             </tr>
@@ -189,6 +192,31 @@ export default function TableView({ data, miscExpenses = 0, psa9Stats = {}, show
                 </td>
                 {showPsa9Stats && (
                   <>
+                    <td className="border border-border-custom px-3 py-2">
+                      <div className="flex flex-col gap-0.5 text-xs">
+                        <div className="whitespace-nowrap">
+                          {card.ebay_sold_url ? (
+                            <a href={card.ebay_sold_url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">eBay(PSA9)</a>
+                          ) : (
+                            <span className="text-text-muted">—</span>
+                          )}
+                        </div>
+                        <div className="whitespace-nowrap">
+                          {psa9Stats[card.id]?.mercariUrl ? (
+                            <a href={psa9Stats[card.id].mercariUrl} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">メルカリ</a>
+                          ) : (
+                            <span className="text-text-muted">—</span>
+                          )}
+                        </div>
+                        <div className="whitespace-nowrap">
+                          {card.card_number ? (
+                            <a href={`https://snkrdunk.com/search?keywords=${encodeURIComponent(card.card_number + " psa9")}&page=1`} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">スニダン</a>
+                          ) : (
+                            <span className="text-text-muted">—</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
                     <td className="border border-border-custom px-3 py-2 text-sm">
                       {(function () {
                         const s = psa9Stats[card.id];
@@ -221,20 +249,6 @@ export default function TableView({ data, miscExpenses = 0, psa9Stats = {}, show
                           </div>
                         );
                       })()}
-                    </td>
-                    <td className="border border-border-custom px-3 py-2 whitespace-nowrap">
-                      {psa9Stats[card.id]?.mercariUrl ? (
-                        <a
-                          href={psa9Stats[card.id].mercariUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-accent hover:underline text-xs"
-                        >
-                          メルカリ
-                        </a>
-                      ) : (
-                        <span className="text-text-muted text-xs">—</span>
-                      )}
                     </td>
                   </>
                 )}

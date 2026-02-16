@@ -128,35 +128,59 @@ export default function CardList({ data, miscExpenses = 0, psa9Stats = {}, showP
                 📊 みんなのポケカ相場で相場を見る
               </a>
             )}
-            {showPsa9Stats && psa9Stats[card.id] && (
+            {showPsa9Stats && (
               <div className="mt-2 space-y-1 text-sm">
-                {psa9Stats[card.id].yahooAvg != null && (
-                  <div>
-                    <span className="text-text-muted">ヤフオク平均:</span>{" "}
-                    <span className="font-medium">{psa9Stats[card.id].yahooAvg.toLocaleString()}円</span>
-                  </div>
+                {psa9Stats[card.id] && (
+                  <>
+                    {psa9Stats[card.id].yahooAvg != null && (
+                      <div>
+                        <span className="text-text-muted">ヤフオク平均:</span>{" "}
+                        <span className="font-medium">{psa9Stats[card.id].yahooAvg.toLocaleString()}円</span>
+                      </div>
+                    )}
+                    {[psa9Stats[card.id].recent1, psa9Stats[card.id].recent2, psa9Stats[card.id].recent3]
+                      .filter(Boolean)
+                      .map((r, i) => (
+                        <a
+                          key={i}
+                          href={r.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block text-accent hover:underline"
+                        >
+                          直近{i + 1}: {r.price.toLocaleString()}円
+                        </a>
+                      ))}
+                    {psa9Stats[card.id].mercariUrl && (
+                      <a
+                        href={psa9Stats[card.id].mercariUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded border border-accent text-accent hover:bg-accent-light/30 transition-colors"
+                      >
+                        📦 メルカリで売れ筋を確認
+                      </a>
+                    )}
+                  </>
                 )}
-                {[psa9Stats[card.id].recent1, psa9Stats[card.id].recent2, psa9Stats[card.id].recent3]
-                  .filter(Boolean)
-                  .map((r, i) => (
-                    <a
-                      key={i}
-                      href={r.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block text-accent hover:underline"
-                    >
-                      直近{i + 1}: {r.price.toLocaleString()}円
-                    </a>
-                  ))}
-                {psa9Stats[card.id].mercariUrl && (
+                {card.ebay_sold_url && (
                   <a
-                    href={psa9Stats[card.id].mercariUrl}
+                    href={card.ebay_sold_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded border border-accent text-accent hover:bg-accent-light/30 transition-colors"
                   >
-                    📦 メルカリで売れ筋を確認
+                    🛒 eBay(PSA9) 売却価格を見る
+                  </a>
+                )}
+                {card.card_number && (
+                  <a
+                    href={`https://snkrdunk.com/search?keywords=${encodeURIComponent(card.card_number + " psa9")}&page=1`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded border border-accent text-accent hover:bg-accent-light/30 transition-colors"
+                  >
+                    🛒 スニダンでPSA9を検索
                   </a>
                 )}
               </div>

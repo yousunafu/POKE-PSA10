@@ -16,8 +16,9 @@
 **定期実行で毎回やること**  
 - 買取表も一緒に更新する: `scrape_otachu.py` → `scrape_rush.py`  
 - 販売・在庫だけ更新する: `scrape_rush.py` のみ  
+- そのあと: `generate_filtered_csv.py` → **`update_ebay_links_gemini.py`**（filtered_cards に新規があれば eBay リンクを ebay_links.json に追加）
 
-通常は **`scrape_otachu.py` → `scrape_rush.py`** の順で 1日2回回す想定で問題ありません。
+通常は **`scripts/run_scheduled_update.sh`** を 1 本実行すれば、上記すべてが順に走ります（推奨）。
 
 ---
 
@@ -28,11 +29,13 @@
 **条件**: 10時・18時に Mac が起動していること。
 
 - **cron**  
+  プロジェクトルートに **`.env`** を作成し、`GEMINI_API_KEY=あなたのキー` を書いておく（eBay リンクの新規追加に使う。未設定でもスクレイプ・filtered までは動く）。  
   `crontab -e` で次を追加（例: 10:00 と 18:00 JST）:
   ```cron
-  0 10 * * * cd /Users/あなた/Desktop/Poke\ trade\ PSA && /usr/bin/python3 scrape_otachu.py && /usr/bin/python3 scrape_rush.py
-  0 18 * * * cd /Users/あなた/Desktop/Poke\ trade\ PSA && /usr/bin/python3 scrape_otachu.py && /usr/bin/python3 scrape_rush.py
+  0 10 * * * cd /Users/あなた/Desktop/Poke\ trade\ PSA && ./scripts/run_scheduled_update.sh
+  0 18 * * * cd /Users/あなた/Desktop/Poke\ trade\ PSA && ./scripts/run_scheduled_update.sh
   ```
+  - **初回だけ**: プロジェクトルートで `cp .env.example .env` を実行し、`.env` を開いて `GEMINI_API_KEY=` にキーを入れて保存。`.env` は `.gitignore` に入っているので Git にコミットされません。
 - **launchd**（macOS 推奨）  
   plist で「10:00 と 18:00 に上記コマンドを実行」するエージェントを登録。
 

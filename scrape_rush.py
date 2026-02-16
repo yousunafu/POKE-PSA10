@@ -249,7 +249,10 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "",
         
         # 商品リンクを取得
         product_links = page.query_selector_all("a[href*='/product/']")
-        
+        _page_title = page.title()
+        _is_cf = "Just a moment" in page.content() or "Verify you are human" in page.content()
+        print(f"  [DEBUG] 商品リンク数: {len(product_links)}, Cloudflare検出: {_is_cf}, ページタイトル: {_page_title[:80] if _page_title else '(なし)'}")
+
         # Cloudflare チャレンジページの場合は待機してリトライ（2件目以降でブロックされやすい）
         _is_cloudflare = "Just a moment" in page.content() or "Verify you are human" in page.content()
         if len(product_links) == 0 and _is_cloudflare:
@@ -262,7 +265,8 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "",
             except PlaywrightTimeoutError:
                 pass
             product_links = page.query_selector_all("a[href*='/product/']")
-        
+            print(f"  [DEBUG] リトライ後 商品リンク数: {len(product_links)}")
+
         # 重複を避けるためにURLを記録
         seen_urls = set()
         
@@ -448,6 +452,16 @@ def search_cardrush(page, keyword: str, target_name: str = "", rarity: str = "",
             }
 
         # マッチする商品が1件もない場合
+        if not product_items and not out_of_stock_items:
+            print(f"  [DEBUG] 商品リンク0件 or 価格抽出失敗でパースできず（検索結果が空の可能性）")
+        elif product_items or out_of_stock_items:
+            print(f"  [DEBUG] 商品は見つかったが名前マッチせず: 在庫あり{len(product_items)}件, 在庫なし{len(out_of_stock_items)}件")
+            if product_items and len(product_items) <= 3:
+                for p in product_items:
+                    print(f"    - 候補: {p.get('name', '')[:60]}")
+            elif out_of_stock_items and len(out_of_stock_items) <= 3:
+                for p in out_of_stock_items:
+                    print(f"    - 候補: {p.get('name', '')[:60]}")
         if product_items:
             print(f"    在庫ありリストに該当カード名({target_name})を含む商品が見つかりませんでした (全{len(product_items)}件)")
         if out_of_stock_items:

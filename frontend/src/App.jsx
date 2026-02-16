@@ -81,6 +81,9 @@ function App() {
   const profitRateMin = filters.profitRateMin != null && filters.profitRateMin !== ""
     ? Number(filters.profitRateMin)
     : 0;
+  const profitRateMax = filters.profitRateMax != null && filters.profitRateMax !== ""
+    ? Number(filters.profitRateMax)
+    : null;
 
   const filteredData = useMemo(() => {
     return cards
@@ -103,10 +106,11 @@ function App() {
         if (filters.inStockOnly && !card.stock_normalized.includes("在庫あり"))
           return false;
         if (card.profitInfo.profitRate < profitRateMin) return false;
+        if (profitRateMax != null && card.profitInfo.profitRate > profitRateMax) return false;
         return true;
       })
       .sort((a, b) => (b.profitInfo.netProfit - miscExpenses) - (a.profitInfo.netProfit - miscExpenses));
-  }, [cards, filters, miscExpenses, profitRateMin]);
+  }, [cards, filters, miscExpenses, profitRateMin, profitRateMax]);
 
   const getDisplayNetProfit = (card) =>
     card.profitInfo ? card.profitInfo.netProfit - miscExpenses : 0;

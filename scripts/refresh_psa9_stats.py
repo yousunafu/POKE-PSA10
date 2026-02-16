@@ -56,17 +56,18 @@ def build_card_list():
         if key not in merged_key_to_idx:
             merged_key_to_idx[key] = i
 
+    # card_id は「バックエンドが CSV を読むときの id」と一致させる必要がある。
+    # バックエンドは df.iterrows() の i（filtered の行インデックス 0,1,2,...）を使うので、ここも filtered の行番号を使う。
     cards = []
-    for _, row in filtered_df.iterrows():
+    for filtered_idx, (_, row) in enumerate(filtered_df.iterrows()):
         no = str(row.get("No", "") or "").strip()
         cn = str(row.get("card_number", "") or row.get("No", "") or "").strip()
         name = str(row.get("カード名", "") or "").strip()
         rarity = str(row.get("レア", "") or "").strip() if pd.notna(row.get("レア")) else ""
         key = (no, cn, name)
-        idx = merged_key_to_idx.get(key)
-        if idx is None:
+        if merged_key_to_idx.get(key) is None:
             continue
-        card_id = f"{no}_{cn}_{idx}"
+        card_id = f"{no}_{cn}_{filtered_idx}"
         cards.append({
             "id": card_id,
             "card_name": name,

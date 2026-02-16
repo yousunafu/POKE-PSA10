@@ -190,7 +190,16 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## 8. 定期スクレイプ（cron）の設定
 
-10:00 と 18:00 **JST** に `scrape_otachu.py` → `scrape_rush.py` を実行します。サーバーが UTC なら **01:00** と **09:00 UTC** にします。
+10:00 と 18:00 **JST** に、スクレイプ → filtered_cards 生成 → **eBay リンク（新規のみ）** まで一括実行します。サーバーが UTC なら **01:00** と **09:00 UTC** にします。
+
+**環境変数（API キー）の置き方**
+
+- プロジェクトルートに **`.env`** を置く。中身の例:
+  ```bash
+  GEMINI_API_KEY=あなたのGeminiAPIキー
+  ```
+- `.env` は **Git にコミットしない**（`.gitignore` に含まれています）。本番サーバーでは `cp .env.example .env` のあと、手動で値を編集するか、 secrets で渡す。
+- 未設定でも `update_ebay_links_gemini.py` がスキップされるだけで、スクレイプと `filtered_cards.csv` の更新は行われます。
 
 ```bash
 crontab -e
@@ -199,15 +208,12 @@ crontab -e
 次の 2 行を追加（1行目が 10:00 JST、2行目が 18:00 JST）:
 
 ```cron
-0 1 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python scrape_otachu.py && /home/ubuntu/app/venv/bin/python scrape_rush.py && /home/ubuntu/app/venv/bin/python generate_filtered_csv.py
-0 9 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python scrape_otachu.py && /home/ubuntu/app/venv/bin/python scrape_rush.py && /home/ubuntu/app/venv/bin/python generate_filtered_csv.py
+0 1 * * * cd /home/ubuntu/app && PYTHON=/home/ubuntu/app/venv/bin/python ./scripts/run_scheduled_update.sh >> /home/ubuntu/app/scrape.log 2>&1
+0 9 * * * cd /home/ubuntu/app && PYTHON=/home/ubuntu/app/venv/bin/python ./scripts/run_scheduled_update.sh >> /home/ubuntu/app/scrape.log 2>&1
 ```
 
-- 実行後、`merged_card_data.csv` と `filtered_cards.csv` が同じディレクトリで更新されます。`filtered_cards.csv` は利益率20%以上の仕入れ候補（鑑定費・手取り利益・利益率・月換算利益率を含む）です。API は `merged_card_data.csv` を参照します
-- ログを残したい場合の例:
-  ```cron
-  0 1 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python scrape_otachu.py && /home/ubuntu/app/venv/bin/python scrape_rush.py >> /home/ubuntu/app/scrape.log 2>&1
-  ```
+- `run_scheduled_update.sh` が順に実行する内容: `scrape_otachu.py` → `scrape_rush.py` → `generate_filtered_csv.py` → `update_ebay_links_gemini.py`（新規カードがあれば ebay_links.json に追加）
+- 実行後、`merged_card_data.csv`・`filtered_cards.csv`・（新規があれば）`ebay_links.json` が更新されます。
 
 ---
 
@@ -221,11 +227,11 @@ crontab -e
 
 ```bash
 cd /home/ubuntu/app
-source venv/bin/activate
-python scrape_otachu.py
-python scrape_rush.py
-python generate_filtered_csv.py
-# merged_card_data.csv と filtered_cards.csv が更新されていることを確認
+# .env があれば GEMINI_API_KEY 等が読み込まれる
+./scripts/run_scheduled_update.sh
+# または 1本ずつ:
+# source venv/bin/activate
+# python scrape_otachu.py && python scrape_rush.py && python generate_filtered_csv.py && python scripts/update_ebay_links_gemini.py
 ```
 
 ---
@@ -252,7 +258,7 @@ sudo certbot --nginx -d example.com
 | API のログ確認 | `journalctl -u poke-psa-api -f` |
 | フロントの更新 | `cd $APP_DIR/frontend && git pull && npm ci && npm run build`（Nginx は再起動不要） |
 | バックエンドの更新 | `cd $APP_DIR && git pull && sudo systemctl restart poke-psa-api` |
-| スクレイプの手動実行 | `cd $APP_DIR && source venv/bin/activate && python scrape_otachu.py && python scrape_rush.py && python generate_filtered_csv.py` |
+| スクレイプの手動実行 | `cd $APP_DIR && PYTHON=$APP_DIR/venv/bin/python ./scripts/run_scheduled_update.sh` |
 | cron のログ | 上記のように `>> scrape.log` を入れていれば `tail -f /home/ubuntu/app/scrape.log` |
 
 ---

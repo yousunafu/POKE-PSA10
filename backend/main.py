@@ -17,9 +17,12 @@ app.add_middleware(
 )
 
 # プロジェクトルートの CSV とリンクマッピングを参照
+# CARD_CSV で "filtered_cards.csv" を指定すると定期更新される filtered_cards を表示対象にできる
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CSV_PATH = os.path.join(BASE_DIR, "merged_card_data.csv")
+_DEFAULT_CSV = os.environ.get("CARD_CSV", "merged_card_data.csv").strip() or "merged_card_data.csv"
+CSV_PATH = os.path.join(BASE_DIR, _DEFAULT_CSV)
 POKECA_LINKS_PATH = os.path.join(BASE_DIR, "pokeca_chart_links.json")
+EBAY_LINKS_PATH = os.path.join(BASE_DIR, "ebay_links.json")
 PSA9_STATS_PATH = os.path.join(BASE_DIR, "psa9_stats.json")
 GAS_PSA9_API_URL = os.environ.get("GAS_PSA9_API_URL", "")
 
@@ -30,6 +33,17 @@ def load_pokeca_links() -> dict:
         return {}
     try:
         with open(POKECA_LINKS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def load_ebay_links() -> dict:
+    """ebay_links.json（カード識別子 → eBay 売却済み検索URL）を読み込み"""
+    if not os.path.exists(EBAY_LINKS_PATH):
+        return {}
+    try:
+        with open(EBAY_LINKS_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, IOError):
         return {}
@@ -94,6 +108,7 @@ def get_cards():
         raise HTTPException(status_code=500, detail=str(e))
 
     pokeca_links = load_pokeca_links()
+    ebay_links = load_ebay_links()
     psa9_stats = load_psa9_stats()
     processed_data = []
     for i, row in df.iterrows():
@@ -107,6 +122,11 @@ def get_cards():
             pokeca_url = pokeca_links[composite_key]
         elif card_number and card_number in pokeca_links:
             pokeca_url = pokeca_links[card_number]
+        ebay_sold_url = None
+        if composite_key and composite_key in ebay_links:
+            ebay_sold_url = ebay_links[composite_key]
+        elif card_number and card_number in ebay_links:
+            ebay_sold_url = ebay_links[card_number]
 
         buy_val = row.get("買取金額", 0)
         sell_val = row.get("ラッシュ販売価格", 0)
@@ -124,6 +144,7 @@ def get_cards():
             "image_url": row.get("画像URL") if pd.notna(row.get("画像URL")) and str(row.get("画像URL")).strip() and str(row.get("画像URL")) != "取得失敗" else None,
             "profit": profit,
             "pokeca_chart_url": pokeca_url,
+            "ebay_sold_url": ebay_sold_url,
         }
         # 定期バッチで取得済みの PSA9 相場をマージ
         if card_id in psa9_stats:

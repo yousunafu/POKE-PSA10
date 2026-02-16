@@ -87,3 +87,64 @@ scrape_otachu.py → scrape_rush.py → generate_filtered_csv.py
 - 仕入れ候補の一覧をスプレッドシートで確認・管理
 - 利益率・鑑定費を考慮した取引判断の参考
 - 他ツールや分析へのデータ渡し
+
+---
+
+## 定期更新への対応（アプリで filtered_cards を表示する場合）
+
+`filtered_cards.csv` は cron 等で定期更新される想定です。アプリ（フロント）のカード一覧を「常に filtered_cards の内容」に合わせたい場合は、バックエンド起動時に環境変数 **CARD_CSV** で CSV を指定できます。
+
+- **未設定 or `merged_card_data.csv`** … これまで通り、merged の全件を API が返す（フロントでフィルター可能）
+- **`filtered_cards.csv`** … API は filtered_cards のみを読み、その内容をそのまま返す。CSV はリクエストごとに読み直すため、定期更新でファイルが差し替わっても次回リクエストから反映される
+
+例（起動時）:
+```bash
+CARD_CSV=filtered_cards.csv uvicorn backend.main:app --reload
+```
+
+スニダンの検索リンクなどは、表示中のカードの `card_number` からその都度 URL を組み立てているため、CSV が更新されてカードの増減があっても対応できます。
+
+---
+
+## 関連: ebay_links.json（eBay 売却済み検索リンク）
+
+アプリでは「eBay 売却価格を見る」リンクをカードごとに表示できます。URL は **ebay_links.json**（プロジェクトルート）で保持します。
+
+- **キー**: `card_number`（例: `"766/742"`）。同じ型番で複数カード名がある場合は `card_number|カード名`（例: `"173/086|Nの筋書き"`）。pokeca_chart_links.json と同じルール。
+- **値**: eBay の売却済み検索 URL（例: `https://www.ebay.com/sch/i.html?_nkw=...&LH_Sold=1&LH_Complete=1`）。
+
+スプレッドシート（GAS＋AI 英訳）で作ったリンクを、キーを上記に合わせてこの JSON に追加・更新すれば、アプリに反映されます。CSV の定期更新とは独立して管理できます。
+
+### 全件（126件）を一括で載せる場合
+
+1. スプレッドシートで「ファイル → ダウンロード → カンマ区切り値 (.csv)」で CSV を保存する。
+2. 次のいずれかで URL を用意する:
+   - **URL 列がある場合**: その列名を `--url-column "列名"` で指定する。列の値が `http` で始まっていれば列名を省略しても自動検出される。
+   - **英名列だけある場合**: GAS で英訳した列名を `--english-name-column "列名"` で指定すると、`英名 + 型番 + Japanese PSA 9` で検索 URL を組み立てる。
+3. プロジェクトルートで実行:
+   ```bash
+   python scripts/build_ebay_links.py ダウンロードした.csv
+   ```
+   URL 列を自動検出しない場合は例:
+   ```bash
+   python scripts/build_ebay_links.py sheet.csv --url-column "eBay PSA9 Sold Link"
+   ```
+   または英名列から組み立てる場合:
+   ```bash
+   python scripts/build_ebay_links.py sheet.csv --english-name-column "Card Name (English)"
+   ```
+4. 生成された `ebay_links.json` がプロジェクトルートに上書きされる。バックエンドを再読み込み（または再起動）すればアプリに反映される。
+
+### 新規カードだけ Gemini で追加する場合（スプレッドシート不要）
+
+filtered_cards.csv に新規カードが追加されたとき、**ebay_links.json にないカードだけ** Gemini API で英名を取得し、eBay URL を組み立ててマージできます。
+
+1. [Google AI Studio](https://aistudio.google.com/apikey) で API キーを取得する。
+2. 環境変数に設定して実行:
+   ```bash
+   pip install google-genai   # 未インストールの場合
+   export GEMINI_API_KEY=あなたのAPIキー
+   python scripts/update_ebay_links_gemini.py
+   ```
+3. `--dry-run` を付けると新規カードの一覧だけ表示し、JSON は更新しない。
+4. 既存の ebay_links.json はそのまま残り、新規分だけ追加される。

@@ -5,6 +5,7 @@ export default function Filters({ filters, setFilters, stats }) {
     if (type === "checkbox") next = checked;
     else if (type === "number") next = value === "" ? null : Number(value);
     else if (name === "profitRateMin") next = value === "" ? 0 : Number(value);
+    else if (name === "profitRateMax") next = value === "" ? null : Number(value);
     if (name === "miscExpenses" && (next === null || next === undefined))
       next = 0;
     setFilters((prev) => ({ ...prev, [name]: next }));
@@ -81,6 +82,28 @@ export default function Filters({ filters, setFilters, stats }) {
             </select>
             <p className="text-xs text-text-muted mt-1">
               仕入れ候補の目安は20%以上
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-main mb-1">
+              利益率（%以下）
+            </label>
+            <select
+              name="profitRateMax"
+              value={filters.profitRateMax != null && filters.profitRateMax !== "" ? String(filters.profitRateMax) : ""}
+              onChange={handleChange}
+              className="w-full border border-border-custom rounded px-3 py-2 text-sm focus:outline-none focus:border-accent"
+            >
+              <option value="">制限なし</option>
+              <option value={50}>50%以下</option>
+              <option value={80}>80%以下</option>
+              <option value={100}>100%以下</option>
+              <option value={150}>150%以下</option>
+              <option value={200}>200%以下</option>
+              <option value={999}>999%以下</option>
+            </select>
+            <p className="text-xs text-text-muted mt-1">
+              異常に高い利益率を除外する場合に指定
             </p>
           </div>
         </div>
