@@ -1,11 +1,15 @@
 """
 みんなのポケカ相場のカード詳細ページURLを取得するスクリプト
 
-merged_card_data.csv の card_number をもとに検索し、
+filtered_cards.csv の card_number をもとに検索し、
 各カードの pokeca-chart.com 詳細ページURLを抽出して pokeca_chart_links.json に保存する。
 
 検索結果が JavaScript で遅延表示されるため Playwright を使用し、
 表示待ちを入れてからリンクを抽出する。
+
+オプション:
+  --test  先頭8件のみ処理
+  --headed  ブラウザを表示（ボット対策が厳しい場合に試す）
 """
 import csv
 import json
@@ -21,7 +25,7 @@ from playwright.sync_api import sync_playwright
 
 # プロジェクトルート
 ROOT = Path(__file__).resolve().parent
-CSV_PATH = ROOT / "merged_card_data.csv"
+CSV_PATH = ROOT / "filtered_cards.csv"
 OUTPUT_PATH = ROOT / "pokeca_chart_links.json"
 BASE_URL = "https://pokeca-chart.com"
 SEARCH_URL = f"{BASE_URL}/"
@@ -35,7 +39,16 @@ CARD_LINK_PATTERN_SPECIAL = re.compile(
     rf"^{re.escape(BASE_URL)}/(\d+-[a-z0-9]+(?:-[a-z0-9]+)*)/?$"
 )
 REQUEST_DELAY_SEC = 1.5
-PAGE_LOAD_WAIT_SEC = 2.5  # 検索結果の表示待ち
+PAGE_LOAD_WAIT_SEC = 5.0  # 検索結果の表示待ち（JS遅延表示のため多めに）
+RESULTS_LINK_WAIT_MS = 12000  # カード詳細リンクが出現するまで待つ最大時間
+SEARCH_RETRY_WAIT_MS = 4000  # 検索結果が「もう一度押すと出る」場合の追加待機（ミリ秒）
+
+# ボット対策回避: 実ブラウザに近い User-Agent とヘッダー
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+VIEWPORT = {"width": 1280, "height": 720}
 
 
 def _composite_key(card_number: str, card_name: str) -> str:
@@ -69,57 +82,125 @@ def get_card_entries() -> list[tuple[str, str, bool]]:
 NOT_FOUND_ON_SITE = "NOT_FOUND"
 
 
-def search_and_extract_link(card_number: str, page, card_name: str | None = None) -> str | None:
+def normalize_card_name_for_search(name: str) -> str:
     """
-    pokeca-chart.com で検索し、カード詳細ページのURLを抽出
-    card_name を渡すと「card_number card_name」で検索（重複型番で正しいカードを特定）
-    戻り値: URL | NOT_FOUND_ON_SITE（サイトに存在しない） | None（技術的エラー）
+    検索用にカード名を正規化。
+    - 全角＆→半角&（広場は半角で登録されているため）
+    - 末尾の (SA) / （SA） / (HR) など括弧表記を除去
     """
-    if card_name:
-        query = quote(f"{card_number} {card_name}")
-    else:
-        query = card_number.replace("/", "%2F")
+    if not name or not name.strip():
+        return name
+    s = name.strip()
+    # 広場は「レシラム&リザードンGX」なので、全角＆を半角&に統一
+    s = s.replace("＆", "&")
+    # 末尾の半角・全角括弧で囲まれた表記（SA, HR, SR など）を繰り返し除去
+    while True:
+        m = re.search(r"\s*[(\（](SA|HR|SR|SAR|MUR|UR|CSR|SSR|P|PR)[)\）]\s*$", s, re.IGNORECASE)
+        if not m:
+            break
+        s = s[: m.start()].rstrip()
+    return s
+
+
+def _do_search_and_parse(page, query: str, card_number: str, try_click_search_retry: bool = False) -> tuple[str | None, bool]:
+    """
+    検索を実行し、HTML から該当 card_number のリンクを抽出する。
+    try_click_search_retry: True のとき、見つからなければ🔍検索ボタン押下で再検索を試す。
+    戻り値: (URL または None, サイト側で NOT FOUND だったか)
+    """
     url = f"{SEARCH_URL}?s={query}"
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=20000)
         page.wait_for_timeout(int(PAGE_LOAD_WAIT_SEC * 1000))
+        try:
+            page.wait_for_selector(
+                'a[href^="/"][href*="-"], a[href*="pokeca-chart.com/"][href*="-"]',
+                timeout=RESULTS_LINK_WAIT_MS,
+            )
+        except Exception:
+            pass
+        page.wait_for_timeout(500)
         html = page.content()
-    except Exception as e:
-        print(f"  取得失敗 {card_number}: {e}")
+    except Exception:
+        return None, False
+
+    def _parse(html_text: str) -> str | None:
+        sp = BeautifulSoup(html_text, "html.parser")
+        exp_slug = card_number.replace("/", "-").lower()
+        for a in sp.find_all("a", href=True):
+            h = a["href"].strip()
+            if h.startswith("//"):
+                h = "https:" + h
+            elif h.startswith("/"):
+                h = BASE_URL + h
+            m = CARD_LINK_PATTERN_STD.match(h)
+            if m:
+                parts = m.group(1).split("-")
+                num_part = parts[-2] + "/" + parts[-1]
+                if num_part == card_number:
+                    return h.rstrip("/") + "/"
+            if "/" in card_number and any(c.isalpha() for c in card_number.split("/")[-1]):
+                m2 = CARD_LINK_PATTERN_SPECIAL.match(h)
+                if m2 and m2.group(1) == exp_slug:
+                    return h.rstrip("/") + "/"
         return None
 
-    soup = BeautifulSoup(html, "html.parser")
-    expected_special_slug = card_number.replace("/", "-").lower()
+    found = _parse(html)
+    if found:
+        return (found, False)
 
-    for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
-        if href.startswith("//"):
-            href = "https:" + href
-        elif href.startswith("/"):
-            href = BASE_URL + href
+    # サイトが「検索ボタンをもう一度押すと出てくる」ように遅延表示している場合のリトライ
+    page.wait_for_timeout(SEARCH_RETRY_WAIT_MS)
+    html2 = page.content()
+    found = _parse(html2)
+    if found:
+        return (found, False)
 
-        # 1) 標準パターン（末尾 -数字-数字）
-        m = CARD_LINK_PATTERN_STD.match(href)
-        if m:
-            slug = m.group(1)
-            parts = slug.split("-")
-            num_part = parts[-2] + "/" + parts[-1]
-            if num_part == card_number:
-                return href.rstrip("/") + "/"
-            return href.rstrip("/") + "/"
+    # 名前のみ検索でまだ見つからなければ、文字は変えず🔍検索ボタンを押して再検索
+    if try_click_search_retry:
+        for sel in ['input[type="submit"]', 'button[type="submit"]', 'button:has-text("検索")', '[aria-label="検索"]']:
+            try:
+                page.locator(sel).first.click(timeout=2000)
+                break
+            except Exception:
+                continue
+        page.wait_for_timeout(SEARCH_RETRY_WAIT_MS)
+        html3 = page.content()
+        found = _parse(html3)
+        if found:
+            return (found, False)
+        not_found = "NOT FOUND" in html.upper() or "NOT FOUND" in html2.upper() or "NOT FOUND" in html3.upper()
+    else:
+        not_found = "NOT FOUND" in html.upper() or "NOT FOUND" in html2.upper()
+    return (None, not_found)
 
-        # 2) 特殊パターン（001/S-P → 001-s-p など、letter 含む card_number）
-        if "/" in card_number and any(c.isalpha() for c in card_number.split("/")[-1]):
-            m = CARD_LINK_PATTERN_SPECIAL.match(href)
-            if m:
-                slug = m.group(1)
-                if slug == expected_special_slug:
-                    return href.rstrip("/") + "/"
 
-    # リンクが見つからなかった場合、サイトが「NOT FOUND」と表示しているか確認
-    if "NOT FOUND" in html.upper():
-        return NOT_FOUND_ON_SITE
-    return None
+def search_and_extract_link(card_number: str, page, card_name: str | None = None) -> str | None:
+    """
+    pokeca-chart.com で検索し、カード詳細ページのURLを抽出。
+    検索は「型番 名前」→「名前のみ」の順。名前のみで見つからなければ🔍検索ボタン押下で再検索する。
+    戻り値: URL | NOT_FOUND_ON_SITE | None
+    """
+    if card_name:
+        search_name = normalize_card_name_for_search(card_name)
+        # 型番 名前 → 名前のみ の順。名前のみのときは見つからなければ検索ボタン押下で再検索
+        queries = [
+            (f"{card_number} {search_name}", False),
+            (search_name, True),  # 名前だけ（見つからなければ🔍を押して再検索）
+        ]
+    else:
+        queries = [(card_number.replace("/", "%2F"), False)]
+
+    for q, click_retry in queries:
+        # & をそのままにすると URL のパラメータ区切りと解釈され「ファイヤー」だけ送られるので必ず quote
+        query = quote(q) if (" " in q or "&" in q) else q
+        found, not_found = _do_search_and_parse(page, query, card_number, try_click_search_retry=click_retry)
+        if found:
+            return found
+        if not_found:
+            continue  # 次のクエリを試す
+    # 最後の試行で NOT FOUND だったかは判定しない（複数クエリ試したため）
+    return NOT_FOUND_ON_SITE
 
 
 def load_existing_links() -> dict[str, str]:
@@ -155,9 +236,19 @@ def main():
         print(f"既存により {len(entries) - total_to_process} 件スキップ、今回 {total_to_process} 件を処理")
 
     fetched = 0
+    use_headed = "--headed" in sys.argv  # ウィンドウ表示でボット対策が厳しい場合に試す
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
+        browser = p.chromium.launch(headless=not use_headed)
+        context = browser.new_context(
+            user_agent=USER_AGENT,
+            viewport=VIEWPORT,
+            locale="ja-JP",
+            extra_http_headers={
+                "Accept-Language": "ja,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+        )
+        page = context.new_page()
         page.set_default_timeout(20000)
 
         for n, (card_number, card_name, is_duplicate) in enumerate(to_process, 1):
