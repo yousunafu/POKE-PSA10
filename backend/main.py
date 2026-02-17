@@ -146,9 +146,12 @@ def get_cards():
             "pokeca_chart_url": pokeca_url,
             "ebay_sold_url": ebay_sold_url,
         }
-        # 定期バッチで取得済みの PSA9 相場をマージ
-        if card_id in psa9_stats:
-            item["psa9Stats"] = psa9_stats[card_id]
+        # 定期バッチで取得済みの PSA9 相場をマージ（composite_key 優先、旧形式の card_id も互換で参照）
+        psa9 = psa9_stats.get(composite_key) if composite_key else None
+        if psa9 is None:
+            psa9 = psa9_stats.get(card_id)
+        if psa9 is not None:
+            item["psa9Stats"] = psa9
         processed_data.append(item)
 
     return processed_data

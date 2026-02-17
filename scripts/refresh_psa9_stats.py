@@ -126,20 +126,23 @@ def main():
         print(f"  バッチ {batch_num}: {len(batch)} 件...", end=" ", flush=True)
         try:
             results = fetch_batch(gas_url, batch)
-            for r in results:
-                cid = r.get("id")
-                if cid:
-                    existing[cid] = {
-                        "yahooAvg": r.get("yahooAvg"),
-                        "yahooMedian": r.get("yahooMedian"),
-                        "recent1": r.get("recent1"),
-                        "recent2": r.get("recent2"),
-                        "recent3": r.get("recent3"),
-                        "mercariUrl": r.get("mercariUrl"),
-                        "hasHistory": r.get("hasHistory"),
-                        "error": r.get("error"),
-                    }
-                    total += 1
+            # 結果は送った順で返る。キーは card_number|カード名（バックエンドと一致）
+            for j, r in enumerate(results):
+                if j >= len(batch):
+                    break
+                card = batch[j]
+                composite_key = f"{card['card_number']}|{card['card_name']}"
+                existing[composite_key] = {
+                    "yahooAvg": r.get("yahooAvg"),
+                    "yahooMedian": r.get("yahooMedian"),
+                    "recent1": r.get("recent1"),
+                    "recent2": r.get("recent2"),
+                    "recent3": r.get("recent3"),
+                    "mercariUrl": r.get("mercariUrl"),
+                    "hasHistory": r.get("hasHistory"),
+                    "error": r.get("error"),
+                }
+                total += 1
             print("OK")
         except Exception as e:
             print(f"エラー: {e}")
@@ -149,8 +152,10 @@ def main():
         import time
         time.sleep(1)
 
+    # 旧形式キー（No_cardNumber_idx）を削除し、composite_key 形式のみ残す
+    cleaned = {k: v for k, v in existing.items() if "|" in k}
     with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(existing, f, ensure_ascii=False, indent=2)
+        json.dump(cleaned, f, ensure_ascii=False, indent=2)
 
     print(f"完了: {total} 件を {OUTPUT_JSON} に保存しました")
 

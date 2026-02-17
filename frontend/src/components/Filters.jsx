@@ -176,7 +176,7 @@ export default function Filters({ filters, setFilters, stats }) {
           </div>
           {stats.hiddenByProfit > 0 && (
             <div className="flex justify-between">
-              <span className="text-text-muted">利益1万以下で非表示:</span>
+              <span className="text-text-muted">利益5千以下で非表示:</span>
               <span className="font-bold">{stats.hiddenByProfit.toLocaleString()}</span>
             </div>
           )}

@@ -13,7 +13,7 @@ const MOBILE_LOAD_MORE = 20;
 const INITIAL_FILTERS = {
   keyword: "",
   inStockOnly: false,
-  showPsa9Stats: false,
+  showPsa9Stats: true,
   showGradingFee: false,
   profitRateMin: 20,
   priceMin: null,

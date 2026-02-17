@@ -4,7 +4,8 @@ filtered_cards.csv と ebay_links.json を比較し、ebay_links にないカー
 Gemini API で英名を取得して eBay URL を組み立て、ebay_links.json にマージする。
 
 前提:
-  - 環境変数 GEMINI_API_KEY に API キーを設定（Google AI Studio で取得）
+  - GEMINI_API_KEY を .env に書くか環境変数で設定（Google AI Studio で取得）
+  - プロジェクトルートの .env があれば自動で読み込む
   - pip install google-genai
 
 使い方:
@@ -22,6 +23,23 @@ from collections import Counter
 from urllib.parse import quote
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# プロジェクトルートの .env を読み込む（GEMINI_API_KEY 用）
+_env_path = os.path.join(BASE_DIR, ".env")
+if os.path.isfile(_env_path):
+    with open(_env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("=")
+                k, v = k.strip(), v.strip()
+                if k and v.startswith('"') and v.endswith('"'):
+                    v = v[1:-1].replace('\\"', '"')
+                elif k and v.startswith("'") and v.endswith("'"):
+                    v = v[1:-1].replace("\\'", "'")
+                if k:
+                    os.environ.setdefault(k, v)
+
 DEFAULT_CSV = os.path.join(BASE_DIR, "filtered_cards.csv")
 DEFAULT_OUTPUT = os.path.join(BASE_DIR, "ebay_links.json")
 EBAY_BASE = "https://www.ebay.com/sch/i.html?_nkw={query}&LH_Sold=1&LH_Complete=1"

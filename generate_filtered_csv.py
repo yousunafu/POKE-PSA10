@@ -11,13 +11,13 @@ import sys
 # 鑑定費・利益率の定数（フロントの profitCalc.js と同一）
 GRADE_FEE_STANDARD = 3000
 GRADE_FEE_EXPRESS = 10000
-MIN_PROFIT_TO_SHOW = 10001
+MIN_PROFIT_TO_SHOW = 5001
 EXPRESS_THRESHOLD = 30000
 DEFAULT_PROFIT_RATE_MIN = 20
 
 
 def get_grading_fee(max_profit):
-    """予想最大利益に応じた鑑定費を返す。10,000円以下なら None（非表示対象）"""
+    """予想最大利益に応じた鑑定費を返す。5,000円以下なら None（非表示対象）"""
     p = int(max_profit) if max_profit is not None and max_profit != "" else 0
     if p < MIN_PROFIT_TO_SHOW:
         return None
@@ -116,7 +116,7 @@ def generate_filtered_csv(
 ):
     """
     フィルタ済みCSVを生成
-    - 予想最大利益 10,001円以上
+    - 予想最大利益 5,001円以上
     - 利益率 profit_rate_min 以上
     - 新列: 鑑定費, 手取り利益, 利益率, 月換算利益率
     """

@@ -1,19 +1,19 @@
 /**
  * 鑑定費・手取り利益・利益率の計算ロジック
- * - 予想最大利益 10,000円以下: 非表示（鑑定費を引くと割に合わない）
- * - 10,001円〜29,999円: 鑑定費 3,000円（2〜3ヶ月プラン）
+ * - 予想最大利益 5,000円以下: 非表示（鑑定費を引くと割に合わない）
+ * - 5,001円〜29,999円: 鑑定費 3,000円（2〜3ヶ月プラン）
  * - 30,000円以上: 鑑定費 10,000円（約1ヶ月プラン）
  */
 
 export const GRADE_FEE_STANDARD = 3000;
 export const GRADE_FEE_EXPRESS = 10000;
-export const MIN_PROFIT_TO_SHOW = 10001;
+export const MIN_PROFIT_TO_SHOW = 5001;
 export const EXPRESS_THRESHOLD = 30000;
 
 /**
  * 予想最大利益に応じた鑑定費を返す
  * @param {number} maxProfit - 予想最大利益（買取価格 - 仕入れ値）
- * @returns {number|null} 鑑定費。10,000円以下なら null（非表示対象）
+ * @returns {number|null} 鑑定費。5,000円以下なら null（非表示対象）
  */
 export function getGradingFee(maxProfit) {
   const p = Number(maxProfit) || 0;
