@@ -67,6 +67,16 @@ def normalize_stock_status(stock_status):
     return s
 
 
+def _safe_float(val, default=0):
+    """CSV の値が数値でない場合に default を返す"""
+    if pd.isna(val) or val == "":
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 def calculate_profit(row):
     stock_status = normalize_stock_status(row.get("ラッシュ在庫状況", ""))
 
@@ -105,56 +115,64 @@ def get_cards():
     try:
         df = pd.read_csv(CSV_PATH, encoding="utf-8-sig")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"CSV read error: {e}")
 
     pokeca_links = load_pokeca_links()
     ebay_links = load_ebay_links()
     psa9_stats = load_psa9_stats()
-    processed_data = []
-    for i, row in df.iterrows():
-        profit = calculate_profit(row)
-        stock_norm = normalize_stock_status(row.get("ラッシュ在庫状況"))
-        card_number = (row.get("card_number", "") or row.get("No", "") or "").strip()
-        card_name = (row.get("カード名") or "不明").strip()
-        composite_key = f"{card_number}|{card_name}" if card_number and card_name else None
-        pokeca_url = None
-        if composite_key and composite_key in pokeca_links:
-            pokeca_url = pokeca_links[composite_key]
-        elif card_number and card_number in pokeca_links:
-            pokeca_url = pokeca_links[card_number]
-        ebay_sold_url = None
-        if composite_key and composite_key in ebay_links:
-            ebay_sold_url = ebay_links[composite_key]
-        elif card_number and card_number in ebay_links:
-            ebay_sold_url = ebay_links[card_number]
+    if not isinstance(psa9_stats, dict):
+        psa9_stats = {}
 
-        buy_val = row.get("買取金額", 0)
-        sell_val = row.get("ラッシュ販売価格", 0)
-        card_id = f"{row.get('No', '')}_{row.get('card_number', '')}_{i}"
-        item = {
-            "id": card_id,
-            "no": row.get("No"),
-            "card_name": card_name,
-            "card_number": card_number,
-            "rarity": (row.get("レア") or "").strip() if pd.notna(row.get("レア")) else "",
-            "buy_price": float(buy_val) if pd.notna(buy_val) and buy_val != "" else 0,
-            "sell_price": float(sell_val) if pd.notna(sell_val) and sell_val != "" else 0,
-            "stock_original": row.get("ラッシュ在庫状況"),
-            "stock_normalized": stock_norm,
-            "image_url": row.get("画像URL") if pd.notna(row.get("画像URL")) and str(row.get("画像URL")).strip() and str(row.get("画像URL")) != "取得失敗" else None,
-            "profit": profit,
-            "pokeca_chart_url": pokeca_url,
-            "ebay_sold_url": ebay_sold_url,
-        }
-        # 定期バッチで取得済みの PSA9 相場をマージ（composite_key 優先、旧形式の card_id も互換で参照）
-        psa9 = psa9_stats.get(composite_key) if composite_key else None
-        if psa9 is None:
-            psa9 = psa9_stats.get(card_id)
-        if psa9 is not None:
-            item["psa9Stats"] = psa9
-        processed_data.append(item)
+    try:
+        processed_data = []
+        for i, row in df.iterrows():
+            profit = calculate_profit(row)
+            stock_norm = normalize_stock_status(row.get("ラッシュ在庫状況"))
+            card_number = (row.get("card_number", "") or row.get("No", "") or "").strip()
+            card_name = (row.get("カード名") or "不明").strip()
+            composite_key = f"{card_number}|{card_name}" if card_number and card_name else None
+            pokeca_url = None
+            if composite_key and composite_key in pokeca_links:
+                pokeca_url = pokeca_links[composite_key]
+            elif card_number and card_number in pokeca_links:
+                pokeca_url = pokeca_links[card_number]
+            ebay_sold_url = None
+            if composite_key and composite_key in ebay_links:
+                ebay_sold_url = ebay_links[composite_key]
+            elif card_number and card_number in ebay_links:
+                ebay_sold_url = ebay_links[card_number]
 
-    return processed_data
+            buy_val = row.get("買取金額", 0)
+            sell_val = row.get("ラッシュ販売価格", 0)
+            card_id = f"{row.get('No', '')}_{row.get('card_number', '')}_{i}"
+            item = {
+                "id": card_id,
+                "no": row.get("No"),
+                "card_name": card_name,
+                "card_number": card_number,
+                "rarity": (row.get("レア") or "").strip() if pd.notna(row.get("レア")) else "",
+            "buy_price": _safe_float(buy_val),
+            "sell_price": _safe_float(sell_val),
+                "stock_original": row.get("ラッシュ在庫状況"),
+                "stock_normalized": stock_norm,
+                "image_url": row.get("画像URL") if pd.notna(row.get("画像URL")) and str(row.get("画像URL")).strip() and str(row.get("画像URL")) != "取得失敗" else None,
+                "profit": profit,
+                "pokeca_chart_url": pokeca_url,
+                "ebay_sold_url": ebay_sold_url,
+            }
+            # 定期バッチで取得済みの PSA9 相場をマージ（composite_key 優先、旧形式の card_id も互換で参照）
+            psa9 = psa9_stats.get(composite_key) if composite_key else None
+            if psa9 is None:
+                psa9 = psa9_stats.get(card_id)
+            if psa9 is not None:
+                item["psa9Stats"] = psa9
+            processed_data.append(item)
+
+        return processed_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"/api/cards error: {e}")
 
 
 @app.post("/api/psa9-stats")
