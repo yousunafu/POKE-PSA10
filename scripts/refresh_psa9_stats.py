@@ -1,6 +1,10 @@
 """
-filtered_cards.csv の全件について GAS を呼び出し、PSA9 相場を取得して
+アプリで表示するカード（利益 5001 円以上）について GAS を呼び出し、PSA9 相場を取得して
 psa9_stats.json に保存する。
+
+対象: merged_card_data.csv のうち、利益が 5001 円以上の行（表示されるカードと同一）。
+     filtered_cards.csv だけだと利益率 20% 未満の 5000〜10000 円帯が抜けるため、
+     merged ベースで利益閾値だけかけている。
 
 実行: GAS_PSA9_API_URL を .env に書くか環境変数で設定してから
   python scripts/refresh_psa9_stats.py
@@ -39,6 +43,48 @@ FILTERED_CSV = os.path.join(BASE_DIR, "filtered_cards.csv")
 OUTPUT_JSON = os.path.join(BASE_DIR, "psa9_stats.json")
 BATCH_SIZE = 20
 SLEEP_MS = 600
+MIN_PROFIT_TO_SHOW = 5001  # フロントと一致（この利益以上のカードを対象）
+
+
+def _normalize_stock_status(stock_status):
+    s = str(stock_status or "")
+    if not s or "取得失敗" in s or s.lower() == "nan":
+        return "在庫なし"
+    return s
+
+
+def _calculate_profit(row):
+    """バックエンドと同一ロジックで利益を計算"""
+    stock_status = _normalize_stock_status(row.get("ラッシュ在庫状況", ""))
+
+    if "在庫なし" in stock_status:
+        sell_raw = row.get("ラッシュ販売価格")
+        if sell_raw is not None and sell_raw != "" and str(sell_raw) != "取得失敗":
+            try:
+                buy = float(row.get("買取金額", 0) or 0)
+                sell = float(str(sell_raw).replace(",", ""))
+                if buy > 0 and sell > 0:
+                    return int(buy - sell)
+            except (ValueError, TypeError):
+                pass
+        return 0
+
+    expect_raw = row.get("期待利益")
+    if expect_raw is not None and expect_raw != "" and str(expect_raw) != "取得失敗":
+        try:
+            return int(float(str(expect_raw).replace(",", "")))
+        except (ValueError, TypeError):
+            pass
+
+    try:
+        buy = float(row.get("買取金額", 0) or 0)
+        sell_raw = row.get("ラッシュ販売価格", 0)
+        sell = float(str(sell_raw).replace(",", "")) if sell_raw else 0
+        if sell == 0:
+            return 0
+        return int(buy - sell)
+    except (ValueError, TypeError):
+        return 0
 
 
 def load_gas_url():
@@ -51,31 +97,50 @@ def load_gas_url():
 
 def build_card_list():
     """
-    merged_card_data と filtered_cards を突き合わせ、取得対象カードの
-    id（/api/cards と一致）を生成して返す。
+    取得対象: merged_card_data のうち利益 >= MIN_PROFIT_TO_SHOW のカード（表示と一致）。
+    composite_key で重複を除き、id は composite_key（API の psa9_stats 照合に使用）。
+    merged が無い場合は filtered_cards のみで従来どおり構築（後方互換）。
     """
-    if not os.path.exists(MERGED_CSV):
-        print(f"エラー: {MERGED_CSV} が見つかりません")
-        sys.exit(1)
+    if os.path.exists(MERGED_CSV):
+        merged_df = pd.read_csv(MERGED_CSV, encoding="utf-8-sig")
+        seen = set()
+        cards = []
+        for _, row in merged_df.iterrows():
+            profit = _calculate_profit(row)
+            if profit < MIN_PROFIT_TO_SHOW:
+                continue
+            no = str(row.get("No", "") or "").strip()
+            cn = str(row.get("card_number", "") or row.get("No", "") or "").strip()
+            name = str(row.get("カード名", "") or "").strip()
+            rarity = str(row.get("レア", "") or "").strip() if pd.notna(row.get("レア")) else ""
+            composite_key = f"{cn}|{name}" if cn and name else None
+            if not composite_key or composite_key in seen:
+                continue
+            seen.add(composite_key)
+            cards.append({
+                "id": composite_key,
+                "card_name": name,
+                "card_number": cn,
+                "rarity": rarity,
+            })
+        if cards:
+            return cards
+
+    # 後方互換: merged が無い or 対象 0 件のときは filtered_cards のみ
     if not os.path.exists(FILTERED_CSV):
-        print(f"エラー: {FILTERED_CSV} が見つかりません")
+        print(f"エラー: {MERGED_CSV} または {FILTERED_CSV} が必要です")
         sys.exit(1)
-
-    merged_df = pd.read_csv(MERGED_CSV, encoding="utf-8-sig")
+    merged_df = pd.read_csv(MERGED_CSV, encoding="utf-8-sig") if os.path.exists(MERGED_CSV) else None
     filtered_df = pd.read_csv(FILTERED_CSV, encoding="utf-8-sig")
-
-    # (No, card_number, カード名) -> merged の行インデックス（複数あれば最初）
     merged_key_to_idx = {}
-    for i, row in merged_df.iterrows():
-        no = str(row.get("No", "") or "").strip()
-        cn = str(row.get("card_number", "") or row.get("No", "") or "").strip()
-        name = str(row.get("カード名", "") or "").strip()
-        key = (no, cn, name)
-        if key not in merged_key_to_idx:
-            merged_key_to_idx[key] = i
-
-    # card_id は「バックエンドが CSV を読むときの id」と一致させる必要がある。
-    # バックエンドは df.iterrows() の i（filtered の行インデックス 0,1,2,...）を使うので、ここも filtered の行番号を使う。
+    if merged_df is not None:
+        for i, row in merged_df.iterrows():
+            no = str(row.get("No", "") or "").strip()
+            cn = str(row.get("card_number", "") or row.get("No", "") or "").strip()
+            name = str(row.get("カード名", "") or "").strip()
+            key = (no, cn, name)
+            if key not in merged_key_to_idx:
+                merged_key_to_idx[key] = i
     cards = []
     for filtered_idx, (_, row) in enumerate(filtered_df.iterrows()):
         no = str(row.get("No", "") or "").strip()
@@ -83,16 +148,15 @@ def build_card_list():
         name = str(row.get("カード名", "") or "").strip()
         rarity = str(row.get("レア", "") or "").strip() if pd.notna(row.get("レア")) else ""
         key = (no, cn, name)
-        if merged_key_to_idx.get(key) is None:
+        if merged_df is not None and merged_key_to_idx.get(key) is None:
             continue
-        card_id = f"{no}_{cn}_{filtered_idx}"
+        composite_key = f"{cn}|{name}" if cn and name else f"{no}_{cn}_{filtered_idx}"
         cards.append({
-            "id": card_id,
+            "id": composite_key,
             "card_name": name,
             "card_number": cn,
             "rarity": rarity,
         })
-
     return cards
 
 
