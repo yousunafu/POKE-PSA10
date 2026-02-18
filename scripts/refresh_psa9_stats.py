@@ -2,8 +2,10 @@
 filtered_cards.csv の全件について GAS を呼び出し、PSA9 相場を取得して
 psa9_stats.json に保存する。
 
-実行: GAS_PSA9_API_URL を設定してから
+実行: GAS_PSA9_API_URL を .env に書くか環境変数で設定してから
   python scripts/refresh_psa9_stats.py
+
+プロジェクトルートに .env があれば GAS_PSA9_API_URL を自動で読み込む（Lightsail などで便利）。
 
 cron 例（毎日 3:00）:
   0 3 * * * cd /path/to/project && GAS_PSA9_API_URL=... python scripts/refresh_psa9_stats.py
@@ -16,6 +18,22 @@ import pandas as pd
 import requests
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# プロジェクトルートの .env を読み込む（Lightsail 内で実行するとき用）
+_env_path = os.path.join(BASE_DIR, ".env")
+if os.path.isfile(_env_path):
+    with open(_env_path, "r", encoding="utf-8-sig") as f:
+        for line in f:
+            line = line.strip().replace("\r", "")
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("=")
+                k, v = k.strip().lstrip("\ufeff").replace("\r", ""), v.strip().replace("\r", "")
+                if k and v.startswith('"') and v.endswith('"'):
+                    v = v[1:-1].replace('\\"', '"')
+                elif k and v.startswith("'") and v.endswith("'"):
+                    v = v[1:-1].replace("\\'", "'")
+                if k:
+                    os.environ.setdefault(k, v)
 MERGED_CSV = os.path.join(BASE_DIR, "merged_card_data.csv")
 FILTERED_CSV = os.path.join(BASE_DIR, "filtered_cards.csv")
 OUTPUT_JSON = os.path.join(BASE_DIR, "psa9_stats.json")

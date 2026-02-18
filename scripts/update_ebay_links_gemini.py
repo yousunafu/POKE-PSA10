@@ -27,12 +27,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # プロジェクトルートの .env を読み込む（GEMINI_API_KEY 用）
 _env_path = os.path.join(BASE_DIR, ".env")
 if os.path.isfile(_env_path):
-    with open(_env_path, "r", encoding="utf-8") as f:
+    with open(_env_path, "r", encoding="utf-8-sig") as f:
         for line in f:
-            line = line.strip()
+            line = line.strip().replace("\r", "")
             if line and not line.startswith("#") and "=" in line:
                 k, _, v = line.partition("=")
-                k, v = k.strip(), v.strip()
+                k, v = k.strip().lstrip("\ufeff").replace("\r", ""), v.strip().replace("\r", "")
                 if k and v.startswith('"') and v.endswith('"'):
                     v = v[1:-1].replace('\\"', '"')
                 elif k and v.startswith("'") and v.endswith("'"):

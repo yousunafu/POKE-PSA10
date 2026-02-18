@@ -319,6 +319,68 @@ chmod +x /home/ubuntu/app/update.sh
 
 ---
 
+## Lightsail 内でメルカリ・ヤフオク・eBay のリンクを更新する
+
+リンク（psa9_stats.json / ebay_links.json）を **Lightsail 上だけで** 更新したい場合の手順です。ローカルから scp しなくてよい。
+
+### 1. プロジェクトルートに .env を用意する
+
+```bash
+cd /home/ubuntu/app
+nano .env
+```
+
+次のように 1 行ずつ書く（値は自分のものに置き換え）。
+
+```env
+GAS_PSA9_API_URL=https://script.google.com/macros/s/あなたのGASのURL/exec
+```
+
+eBay 用に Gemini も使う場合は追加。
+
+```env
+GEMINI_API_KEY=あなたのGemini APIキー
+```
+
+保存して終了（Ctrl+O → Enter → Ctrl+X）。
+
+- `.env` は Git に含めない想定なので、**サーバーでだけ**作成・編集する。
+
+### 2. メルカリ・ヤフオク用（psa9_stats.json）を更新
+
+```bash
+cd /home/ubuntu/app
+source .env   # なくてもスクリプトが .env を読む
+python3 scripts/refresh_psa9_stats.py
+```
+
+- `filtered_cards.csv` と `merged_card_data.csv` が同じディレクトリにある必要がある（通常はスクレイプ済みならある）。
+- 数分かかることがある。完了したら `psa9_stats.json` が上書きされる。
+
+### 3. eBay 用（ebay_links.json）を更新（任意）
+
+Gemini API キーを .env に書いている場合。
+
+```bash
+cd /home/ubuntu/app
+pip install google-genai   # 未インストールなら
+python3 scripts/update_ebay_links_gemini.py
+```
+
+- 新規カードだけが追加される。既存の ebay_links.json はそのまま残る。
+
+### 4. API を再起動する
+
+JSON を読み直させるため再起動する。
+
+```bash
+sudo systemctl restart poke-psa-api
+```
+
+以上で、Lightsail 内だけでメルカリ・ヤフオク・eBay のリンクが最新になる。
+
+---
+
 ## トラブルシュート
 
 - **502 Bad Gateway**  
