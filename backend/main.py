@@ -123,6 +123,47 @@ def get_cards():
     if not isinstance(psa9_stats, dict):
         psa9_stats = {}
 
+    # NOTE:
+    # 旧仕様では psa9_stats.json のキーが「No_card_number_rowIndex」のように行インデックス依存になっており、
+    # CSV の読み込み元（merged/filtered）や並びが変わると card.id と一致しなくなる。
+    # そこで「No_card_number」までの prefix で候補を集め、データが揃っている方を優先して紐付ける。
+    underscore_prefix_map = {}
+
+    for k, v in psa9_stats.items():
+        if not isinstance(k, str):
+            continue
+        if "|" in k:
+            continue
+        # 例: "173/086_173/086_37" -> prefix: "173/086_173/086"
+        parts = k.split("_")
+        if len(parts) < 3:
+            continue
+        prefix = f"{parts[0]}_{parts[1]}"
+        underscore_prefix_map.setdefault(prefix, []).append(v)
+
+    def _psa9_score(psa9: dict) -> int:
+        """候補の中から「よりデータが揃っているもの」を優先するスコア。"""
+        if not isinstance(psa9, dict):
+            return -10**9
+        if psa9.get("error"):
+            return -10**6
+        recent_urls = []
+        for key in ("recent1", "recent2", "recent3"):
+            r = psa9.get(key) or {}
+            recent_urls.append(r.get("url"))
+        has_recent = any(u for u in recent_urls if isinstance(u, str) and u.strip())
+        yahoo_avg = psa9.get("yahooAvg")
+        has_hist = psa9.get("hasHistory") is True
+
+        score = 0
+        if has_recent:
+            score += 100
+        if yahoo_avg is not None:
+            score += 20
+        if has_hist:
+            score += 5
+        return score
+
     try:
         processed_data = []
         for i, row in df.iterrows():
@@ -164,6 +205,17 @@ def get_cards():
             psa9 = psa9_stats.get(composite_key) if composite_key else None
             if psa9 is None:
                 psa9 = psa9_stats.get(card_id)
+
+            # それでも見つからない場合（CSVの行インデックスがズレている旧キー）、
+            # prefix（No_card_number）で最良候補を選ぶ。
+            if psa9 is None:
+                no_val = str(row.get("No", "") or "").strip()
+                cn_val = (row.get("card_number") or row.get("No") or "").strip()
+                if no_val and cn_val:
+                    prefix = f"{no_val}_{cn_val}"
+                    candidates = underscore_prefix_map.get(prefix) or []
+                    if candidates:
+                        psa9 = max(candidates, key=_psa9_score)
             if psa9 is not None:
                 item["psa9Stats"] = psa9
             processed_data.append(item)
