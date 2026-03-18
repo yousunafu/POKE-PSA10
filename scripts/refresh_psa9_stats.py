@@ -208,13 +208,13 @@ def main():
         print(f"  バッチ {batch_num}: {len(batch)} 件...", end=" ", flush=True)
         try:
             results = fetch_batch(gas_url, batch)
-            # 結果は送った順で返る。キーは card_number|カード名（バックエンドと一致）
-            for j, r in enumerate(results):
-                if j >= len(batch):
-                    break
-                card = batch[j]
-                composite_key = f"{card['card_number']}|{card['card_name']}"
-                existing[composite_key] = {
+            # GAS の返却 results に含まれる id をキーとして保存する。
+            # 部分失敗や順序ズレがあっても、値が別カードに上書きされる事故を防ぐ。
+            for r in results:
+                cid = r.get("id")
+                if not cid:
+                    continue
+                existing[cid] = {
                     "yahooAvg": r.get("yahooAvg"),
                     "yahooMedian": r.get("yahooMedian"),
                     "recent1": r.get("recent1"),
@@ -234,10 +234,10 @@ def main():
         import time
         time.sleep(1)
 
-    # 旧形式キー（No_cardNumber_idx）を削除し、composite_key 形式のみ残す
-    cleaned = {k: v for k, v in existing.items() if "|" in k}
     with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(cleaned, f, ensure_ascii=False, indent=2)
+        # GAS が返す id をキーにしているため、返却された形式はそのまま保存する
+        # （バックエンド側で composite_key 優先 + 互換フォールバックしている）
+        json.dump(existing, f, ensure_ascii=False, indent=2)
 
     print(f"完了: {total} 件を {OUTPUT_JSON} に保存しました")
 
