@@ -208,23 +208,42 @@ def main():
         print(f"  バッチ {batch_num}: {len(batch)} 件...", end=" ", flush=True)
         try:
             results = fetch_batch(gas_url, batch)
-            # GAS の返却 results に含まれる id をキーとして保存する。
-            # 部分失敗や順序ズレがあっても、値が別カードに上書きされる事故を防ぐ。
-            for r in results:
-                cid = r.get("id")
-                if not cid:
-                    continue
-                existing[cid] = {
-                    "yahooAvg": r.get("yahooAvg"),
-                    "yahooMedian": r.get("yahooMedian"),
-                    "recent1": r.get("recent1"),
-                    "recent2": r.get("recent2"),
-                    "recent3": r.get("recent3"),
-                    "mercariUrl": r.get("mercariUrl"),
-                    "hasHistory": r.get("hasHistory"),
-                    "error": r.get("error"),
-                }
-                total += 1
+            # GAS が results に id を返す場合は id をキーとして保存する。
+            # id を返さない場合があるので、そのときは送信した順番（batch順）で保存する。
+            has_result_ids = any((r or {}).get("id") for r in results)
+            if has_result_ids:
+                for r in results:
+                    cid = (r or {}).get("id")
+                    if not cid:
+                        continue
+                    existing[cid] = {
+                        "yahooAvg": r.get("yahooAvg"),
+                        "yahooMedian": r.get("yahooMedian"),
+                        "recent1": r.get("recent1"),
+                        "recent2": r.get("recent2"),
+                        "recent3": r.get("recent3"),
+                        "mercariUrl": r.get("mercariUrl"),
+                        "hasHistory": r.get("hasHistory"),
+                        "error": r.get("error"),
+                    }
+                    total += 1
+            else:
+                for j, r in enumerate(results):
+                    if j >= len(batch):
+                        break
+                    card = batch[j]
+                    cid = card["id"]
+                    existing[cid] = {
+                        "yahooAvg": r.get("yahooAvg"),
+                        "yahooMedian": r.get("yahooMedian"),
+                        "recent1": r.get("recent1"),
+                        "recent2": r.get("recent2"),
+                        "recent3": r.get("recent3"),
+                        "mercariUrl": r.get("mercariUrl"),
+                        "hasHistory": r.get("hasHistory"),
+                        "error": r.get("error"),
+                    }
+                    total += 1
             print("OK")
         except Exception as e:
             print(f"エラー: {e}")
